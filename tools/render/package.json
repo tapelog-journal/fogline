@@ -1,0 +1,1 @@
+{"name":"fogline-render","private":true,"type":"module","description":"Renders Fogline cosmetic images, contact sheet, hero shot and effect clips with headless Chrome.","dependencies":{"puppeteer-core":"^23.11.1"}}

@@ -1,0 +1,36 @@
+{
+ "name": "Tape Victory Banner",
+ "description": "Hazard-tape banner in TapeLog yellow. Fogline cosmetic (Victory banners). Purely decorative: zero gameplay effect. Base Sepolia testnet item priced in valueless test fUSD. Game for entertainment. Not investment advice.",
+ "image": "https://tapelog-journal.github.io/fogline/cosmetics/img/22.png",
+ "external_url": "https://tapelog-journal.github.io/fogline/?banner=22",
+ "attributes": [
+  {
+   "trait_type": "Category",
+   "value": "Victory banners"
+  },
+  {
+   "trait_type": "Rarity",
+   "value": "Common"
+  },
+  {
+   "trait_type": "Price (test fUSD)",
+   "value": 2
+  },
+  {
+   "trait_type": "Max supply",
+   "value": "Unlimited"
+  },
+  {
+   "trait_type": "Equip slot",
+   "value": "BoardTheme"
+  },
+  {
+   "trait_type": "Gameplay effect",
+   "value": "None"
+  },
+  {
+   "trait_type": "Network",
+   "value": "Base Sepolia (testnet)"
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "name": "Gilded Victory Banner",
+ "description": "A gold ribbon banner for the winner. Fogline cosmetic (Victory banners). Purely decorative: zero gameplay effect. Base Sepolia testnet item priced in valueless test fUSD. Game for entertainment. Not investment advice.",
+ "image": "https://tapelog-journal.github.io/fogline/cosmetics/img/21.png",
+ "external_url": "https://tapelog-journal.github.io/fogline/?banner=21",
+ "attributes": [
+  {
+   "trait_type": "Category",
+   "value": "Victory banners"
+  },
+  {
+   "trait_type": "Rarity",
+   "value": "Rare"
+  },
+  {
+   "trait_type": "Price (test fUSD)",
+   "value": 4
+  },
+  {
+   "trait_type": "Max supply",
+   "value": "Unlimited"
+  },
+  {
+   "trait_type": "Equip slot",
+   "value": "BoardTheme"
+  },
+  {
+   "trait_type": "Gameplay effect",
+   "value": "None"
+  },
+  {
+   "trait_type": "Network",
+   "value": "Base Sepolia (testnet)"
+  }
+ ]
+}

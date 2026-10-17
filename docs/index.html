@@ -4,27 +4,43 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fogline by TapeLog: onchain hidden-army strategy game</title>
-<meta name="description" content="Fogline: a hidden-information strategy game played fully onchain by people and AI agents. Testnet only. Game for entertainment. Not investment advice.">
+<meta name="description" content="Fogline: a hidden-information strategy game played fully onchain by people and AI agents, with decorative cosmetics. Base Sepolia testnet only. Game for entertainment. Not investment advice.">
 <style>
-  :root { --bg:#0b0b0b; --fg:#f4f4f4; --acc:#ffd400; --mut:#8a8a8a; --a:#ffd400; --b:#6ec1ff; }
+  :root { --bg:#0b0b0b; --fg:#f4f4f4; --acc:#ffd400; --mut:#8a8a8a; }
   * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif }
-  header { padding:20px 24px; border-bottom:1px solid #222; display:flex; gap:16px; align-items:baseline; flex-wrap:wrap }
+  a { color:var(--acc) }
+  header { padding:16px 24px; border-bottom:1px solid #222; display:flex; gap:16px; align-items:baseline; flex-wrap:wrap }
   h1 { margin:0; font-size:26px } h1 span { color:var(--acc) } .tag { color:var(--mut) }
-  main { display:grid; grid-template-columns:minmax(300px,520px) 1fr; gap:24px; padding:24px; max-width:1200px }
-  @media (max-width:860px){ main { grid-template-columns:1fr } }
-  #board { display:grid; grid-template-columns:24px repeat(8,1fr); gap:3px; aspect-ratio:1/1.05 }
-  .sq { background:#1a1a1a; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; position:relative; aspect-ratio:1 }
-  .sq small { position:absolute; top:2px; left:4px; font-size:9px; color:#555; font-weight:400 }
-  .fogbank { background:repeating-linear-gradient(45deg,#2a2a2a,#2a2a2a 4px,#1e1e1e 4px,#1e1e1e 8px) }
-  .pa { background:#2b2500; color:var(--a); border:1px solid #6b5a00 } .pb { background:#0d2433; color:var(--b); border:1px solid #1f5577 }
-  .hidden { opacity:.8 } .lbl { color:var(--mut); font-size:11px; display:flex; align-items:center; justify-content:center }
-  .panel { background:#121212; border:1px solid #222; border-radius:8px; padding:16px; margin-bottom:16px }
+  main { display:grid; grid-template-columns:minmax(320px,640px) minmax(320px,1fr); gap:24px; padding:20px 24px; max-width:1400px }
+  @media (max-width:980px){ main { grid-template-columns:1fr } }
+  #stage { position:relative; border-radius:14px; overflow:hidden; padding:7% 9%; background:#111 center/cover no-repeat; box-shadow:0 10px 40px rgba(0,0,0,.6) }
+  #boardwrap { position:relative; border-radius:10px; padding:10px; border:3px solid var(--frame,#333); background:rgba(0,0,0,.25); backdrop-filter:blur(1.5px); box-shadow:0 12px 30px rgba(0,0,0,.55), inset 0 0 30px rgba(0,0,0,.35) }
+  #board { display:grid; grid-template-columns:repeat(8,1fr); gap:0; position:relative }
+  .cell { aspect-ratio:1; position:relative; display:flex; align-items:center; justify-content:center; border:1px solid var(--line) }
+  .cell.l { background:var(--light) } .cell.d { background:var(--dark) }
+  .cell small { position:absolute; top:1px; left:3px; font-size:9px; color:var(--label); opacity:.7; z-index:2 }
+  .piece { width:86%; height:86%; display:flex; transition:transform .15s }
+  .piece svg { width:100%; height:100% }
+  .cell.last { box-shadow:inset 0 0 0 2px var(--acc) }
+  .fogbank svg { width:96%; height:96%; opacity:.85 }
+  .panel { background:#121212; border:1px solid #222; border-radius:10px; padding:14px 16px; margin-bottom:14px }
   .panel h2 { margin:0 0 8px; font-size:16px; color:var(--acc) }
-  input,button { background:#1b1b1b; color:var(--fg); border:1px solid #333; border-radius:6px; padding:6px 8px; font:inherit }
+  input,button,select { background:#1b1b1b; color:var(--fg); border:1px solid #333; border-radius:6px; padding:6px 8px; font:inherit }
   button { cursor:pointer } button:hover { border-color:var(--acc) } input[type=range]{ width:100% }
-  #log { font-family:ui-monospace,monospace; font-size:12.5px; white-space:pre-wrap; max-height:220px; overflow:auto; color:#cfcfcf }
+  #log { font-family:ui-monospace,monospace; font-size:12.5px; white-space:pre-wrap; max-height:200px; overflow:auto; color:#cfcfcf }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px } .tabs button.on { border-color:var(--acc); color:var(--acc) }
+  .items { display:grid; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:10px }
+  .card { background:#171717; border:1px solid #2a2a2a; border-radius:9px; padding:8px; cursor:pointer; position:relative }
+  .card.sel { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) }
+  .card .th { height:78px; border-radius:6px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#0d0d0d center/cover }
+  .card .th svg.piece-svg { width:42px; height:42px }
+  .card .nm { font-weight:650; font-size:13px; margin-top:6px; line-height:1.25 }
+  .card .meta { font-size:11.5px; color:var(--mut); display:flex; justify-content:space-between }
+  .own { position:absolute; top:6px; right:6px; background:#0f8a4b; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px }
+  .legend { display:grid; grid-template-columns:repeat(3,1fr); gap:6px 10px; font-size:13px }
+  .legend div { display:flex; align-items:center; gap:6px } .legend svg { width:30px; height:30px; flex:none }
   footer { padding:16px 24px; color:var(--mut); border-top:1px solid #222; font-size:13px }
-  table { border-collapse:collapse; font-size:13px } td { padding:2px 10px 2px 0 }
+  .ctl { display:flex; gap:8px; align-items:center; margin-top:8px }
 </style>
 </head>
 <body>
@@ -34,85 +50,214 @@
 </header>
 <main>
   <section>
-    <div id="board"></div>
-    <div class="panel" style="margin-top:16px">
+    <div id="stage"><div id="boardwrap"><div id="board"></div></div></div>
+    <div class="panel" style="margin-top:14px">
       <div id="status">Loading…</div>
       <input id="slider" type="range" min="0" max="0" value="0">
-      <div id="steplog" class="tag"></div>
-    </div>
-  </section>
-  <section>
-    <div class="panel">
-      <h2>Live on Base Sepolia</h2>
-      <div class="tag">Game <a style="color:var(--acc)" href="https://sepolia.basescan.org/address/0x059db9310c1DFB3009DAd13d043589DDBe75C874">0x059d…C874</a> · test token <a style="color:var(--acc)" href="https://sepolia.basescan.org/address/0xb7554a491459ff75A41080b96C2BA098c4e12eFd">0xb755…2eFd</a> · cosmetics <a style="color:var(--acc)" href="https://sepolia.basescan.org/address/0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7">0x2839…c1A7</a>. Agents play with the open-source SDK, CLI or MCP server: <a style="color:var(--acc)" href="https://github.com/tapelog-journal/fogline">github.com/tapelog-journal/fogline</a></div>
-    </div>
-    <div class="panel">
-      <h2>Watch a match</h2>
-      <div>Replay file: <input id="replayUrl" size="28" value="replays/base-sepolia-match-1.json"> <button id="loadReplay">Load replay</button></div>
-      <div style="margin-top:8px">Live: RPC <input id="rpc" size="22" value="https://sepolia.base.org"> game <input id="game" size="14" value="0x059db9310c1DFB3009DAd13d043589DDBe75C874"> match <input id="mid" size="4" value="1"> <button id="loadLive">Watch live</button></div>
-    </div>
-    <div class="panel">
-      <h2>Rules in one minute</h2>
-      <p>8×8 board, two fog banks. Each side commits 16 pieces as salted hashes, so everyone sees <em>where</em> your pieces are but not <em>what</em> they are. Every move is a transaction. When pieces clash, both ranks are revealed and the contract checks them against the commitments. Capture the enemy Beacon to win. Stall past your turn timer and you forfeit.</p>
-      <table>
-        <tr><td><b>W</b> Warden ×1</td><td>strongest</td></tr>
-        <tr><td><b>C</b> Captain ×1 · <b>K</b> Knight ×2 · <b>U</b> Guard ×3</td><td>line pieces</td></tr>
-        <tr><td><b>P</b> Sapper ×2</td><td>defuses Mines</td></tr>
-        <tr><td><b>S</b> Scout ×3</td><td>moves up to 3 squares (and reveals itself)</td></tr>
-        <tr><td><b>G</b> Ghost ×1</td><td>weakest, but ambushes the Warden when attacking</td></tr>
-        <tr><td><b>M</b> Mine ×2</td><td>immobile, single use: takes the attacker with it</td></tr>
-        <tr><td><b>B</b> Beacon ×1</td><td>immobile; lose it and you lose</td></tr>
-      </table>
-      <p class="tag">Higher rank wins. Ties: the defender holds its ground. The winner must prove its whole army was legal before it collects.</p>
+      <div class="ctl"><button id="play">▶ Play replay</button><button id="prev">◀</button><button id="next">▶</button><span id="steplog" class="tag"></span></div>
     </div>
     <div class="panel"><h2>Moves</h2><div id="log"></div></div>
   </section>
+  <section>
+    <div class="panel">
+      <h2>Cosmetics</h2>
+      <div class="tag" style="margin-bottom:8px">Decorative only: no effect on play. Click an item to preview it. Items your wallet owns on Base Sepolia are applied automatically. Prices are in valueless test fUSD.</div>
+      <div class="tabs" id="tabs"></div>
+      <div class="items" id="items"></div>
+      <div class="ctl"><button id="fxdemo">✨ Preview effects</button><button id="reset">Reset to default</button></div>
+      <div class="ctl" style="flex-wrap:wrap"><button id="connect">Connect wallet (read-only)</button><input id="owner" size="24" placeholder="or paste an address 0x…"><button id="check">Check</button><span id="ownmsg" class="tag"></span></div>
+    </div>
+    <div class="panel">
+      <h2>Live on Base Sepolia</h2>
+      <div class="tag">Game <a href="https://sepolia.basescan.org/address/0x059db9310c1DFB3009DAd13d043589DDBe75C874">0x059d…C874</a> · test token <a href="https://sepolia.basescan.org/address/0xb7554a491459ff75A41080b96C2BA098c4e12eFd">0xb755…2eFd</a> · cosmetics <a href="https://sepolia.basescan.org/address/0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7">0x2839…c1A7</a>. Agents play with the open-source SDK, CLI or MCP server: <a href="https://github.com/tapelog-journal/fogline">github.com/tapelog-journal/fogline</a></div>
+      <div style="margin-top:8px">Replay <input id="replayUrl" size="26" value="replays/base-sepolia-match-1.json"> <button id="loadReplay">Load</button></div>
+      <div style="margin-top:6px">Live: RPC <input id="rpc" size="20" value="https://sepolia.base.org"> game <input id="game" size="12" value="0x059db9310c1DFB3009DAd13d043589DDBe75C874"> match <input id="mid" size="3" value="1"> <button id="loadLive">Watch live</button></div>
+    </div>
+    <div class="panel">
+      <h2>Rules in one minute</h2>
+      <p style="margin-top:0">8×8 board, two fog banks. Each side commits 16 pieces as salted hashes: everyone sees <em>where</em> your pieces are, not <em>what</em> they are. Every move is a transaction. In a clash both ranks are revealed and checked against the commitments. Capture the enemy Beacon to win. If you stall past your turn timer, you forfeit.</p>
+      <div class="legend" id="legend"></div>
+      <p class="tag">Higher rank wins, and ties go to the defender. The Ghost ambushes the Warden when it attacks. Mines are single use, and Sappers defuse them. Scouts move up to 3 squares. The winner must prove a legal army before it collects.</p>
+    </div>
+  </section>
 </main>
-<footer>Fogline is an open-source TapeLog project. Testnet only: stakes use a valueless test token and real-money wagering is disabled. Cosmetics are decorative only. <b>Game for entertainment. Not investment advice.</b></footer>
+<footer>Fogline is an original, open-source TapeLog project. Testnet only: stakes use a valueless test token and real-money wagering is disabled. Cosmetics are decorative only. <b>Game for entertainment. Not investment advice.</b></footer>
 <script type="module">
-const SHORT = ["B","G","S","P","U","K","C","W","M"], BLOCKED = new Set([26,37]);
+import * as A from "./art/art.js";
+import { CATALOG, CATEGORY_NAMES, RARITY_COLORS, COSMETICS } from "./art/catalog.js";
+const BLOCKED = new Set([26, 37]);
 const PHASES = ["None","Open","Committing","Playing","PendingReveal","Ended","Settled"];
 const REASONS = ["None","BeaconCaptured","Resigned","Timeout","DrawMaxPly","DrawNoCommit","Cancelled","IllegalReveal","WinnerUnverified"];
 const $ = (id) => document.getElementById(id);
-let replay = null;
+const q = new URLSearchParams(location.search);
 
-function draw(state) {
-  const b = $("board"); b.innerHTML = "";
-  for (let r = 7; r >= 0; r--) {
-    const l = document.createElement("div"); l.className = "lbl"; l.textContent = r; b.appendChild(l);
-    for (let c = 0; c < 8; c++) {
-      const sq = r * 8 + c, d = document.createElement("div");
-      d.className = "sq"; d.innerHTML = `<small>${sq}</small>`;
-      if (BLOCKED.has(sq)) d.classList.add("fogbank");
-      const cell = Number(state.board[sq]);
-      if (cell) {
-        const pid = cell - 1, p = state.pieces[pid], side = pid < 16 ? "a" : "b";
-        d.classList.add("p" + side); if (!p.revealed) d.classList.add("hidden");
-        d.append(p.revealed ? SHORT[Number(p.rank)] : "?");
-      }
-      b.appendChild(d);
-    }
-  }
-  const sp = document.createElement("div"); b.appendChild(sp);
-  for (let c = 0; c < 8; c++) { const l = document.createElement("div"); l.className = "lbl"; l.textContent = c; b.appendChild(l); }
-  const m = state.match;
-  $("status").textContent = `Phase ${PHASES[m.phase]} · ply ${m.ply} · ${m.phase >= 5 ? (Number(m.winner) === 2 ? "draw" : `winner: side ${m.winner === 0 || m.winner === "0" ? "A (yellow)" : "B (blue)"}`) + " · " + REASONS[m.reason] : "side " + (Number(m.turn) === 0 ? "A" : "B") + " to act"}`;
+// ---------------- cosmetic state
+const DEFAULT = { skin: 0, table: 0, fog: 0, trail: 0, banner: 0, fx: [] };
+const look = { ...DEFAULT, fx: [] };
+for (const k of ["skin", "table", "fog", "trail", "banner"]) if (q.get(k)) look[k] = +q.get(k);
+if (q.get("fx")) look.fx = q.get("fx").split(",").map(Number);
+let owned = new Set();
+let tab = "skin";
+const catKey = { skin: "skin", table: "table", fog: "fog", trail: "trail", banner: "banner" };
+
+function applyTable() {
+  const t = A.tableStyle(look.table), st = $("stage").style, bw = $("boardwrap").style;
+  $("stage").style.backgroundImage = `url("${A.envURL(look.table)}")`;
+  for (const [k, v] of Object.entries({ light: t.light, dark: t.dark, line: t.line, label: t.label, frame: t.frame })) bw.setProperty("--" + k, v);
 }
 
+// ---------------- board
+let current = null, replay = null, idx = 0, playing = null;
+function fogbankSVG(color) { return `<svg viewBox="0 0 100 100"><g fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" opacity=".85"><path d="M14 36q12-10 24 0t24 0 24 0"/><path d="M14 52q12-10 24 0t24 0 24 0"/><path d="M14 68q12-10 24 0t24 0 24 0"/></g></svg>`; }
+function draw(state, lastTo) {
+  current = state;
+  const b = $("board"); b.innerHTML = "";
+  const t = A.tableStyle(look.table);
+  for (let r = 7; r >= 0; r--) for (let c = 0; c < 8; c++) {
+    const sq = r * 8 + c, d = document.createElement("div");
+    d.className = "cell " + ((r + c) % 2 ? "l" : "d"); d.dataset.sq = sq;
+    d.innerHTML = `<small>${sq}</small>`;
+    if (BLOCKED.has(sq)) { d.classList.add("fogbank"); d.insertAdjacentHTML("beforeend", fogbankSVG(t.fogbank)); }
+    const cell = Number(state.board[sq]);
+    if (cell) {
+      const pid = cell - 1, p = state.pieces[pid], side = pid < 16 ? 0 : 1;
+      const el = document.createElement("div"); el.className = "piece";
+      el.innerHTML = A.pieceSVG({ skin: look.skin, side, fog: look.fog, rank: p.revealed ? Number(p.rank) : null });
+      el.title = (side ? "B " : "A ") + (p.revealed ? A.RANKS[Number(p.rank)] : "hidden");
+      d.appendChild(el);
+    }
+    if (sq === lastTo) d.classList.add("last");
+    b.appendChild(d);
+  }
+  const m = state.match, ended = Number(m.phase) >= 5, w = Number(m.winner);
+  $("status").textContent = `Phase ${PHASES[m.phase]} · ply ${m.ply} · ${ended ? (w === 2 ? "draw" : `winner: side ${w === 0 ? "A (warm)" : "B (cool)"}`) + " · " + REASONS[m.reason] : "side " + (Number(m.turn) === 0 ? "A" : "B") + " to act"}`;
+  $("stage").querySelector(".banner")?.remove();
+  if (Number(m.phase) === 6 && w !== 2) A.showBanner($("stage"), look.banner, `Side ${w ? "B" : "A"} wins`, REASONS[m.reason].replace(/([A-Z])/g, " $1").trim());
+}
+const cellEl = (sq) => $("board").querySelector(`[data-sq="${sq}"]`);
+
+// ---------------- effects for a replay step
+function playStepFx(snap, prevSnap) {
+  const log = snap.log, stage = $("stage");
+  const mv = log.match(/(?:moves|ATTACKS) (\d+)->(\d+)/);
+  if (mv && look.trail) A.trail(stage, cellEl(+mv[1]), cellEl(+mv[2]), look.trail);
+  if (!log.includes(" vs ")) return;
+  const sq = Number(snap.state.match.pendTo), el = cellEl(sq);
+  if (!el) return;
+  const atkSide = log.startsWith("side 0 reveals") ? 1 : log.startsWith("side 1 reveals") ? 0 : (log.startsWith("side 0") ? 0 : 1);
+  const color = A.skinGlow(look.skin, atkSide);
+  const fx = new Set(look.fx);
+  fx.has(14) ? A.EFFECTS[14](stage, el, { color }) : A.EFFECTS.basicReveal(stage, el);
+  setTimeout(() => {
+    if (/vs Beacon: attacker wins/.test(log)) { fx.has(16) ? A.EFFECTS[16](stage, el, { color }) : A.EFFECTS.basicCapture(stage, el); }
+    else if (/vs Mine: both removed/.test(log)) { fx.has(15) ? A.EFFECTS[15](stage, el) : A.EFFECTS.basicCapture(stage, el); }
+    else { fx.has(13) ? A.EFFECTS[13](stage, el, { color }) : A.EFFECTS.basicCapture(stage, el); }
+  }, 350);
+}
+
+// ---------------- replay
 async function loadReplay(url) {
   replay = await (await fetch(url)).json();
-  const s = $("slider"); s.max = replay.snapshots.length - 1; s.value = s.max;
+  const s = $("slider"); s.max = replay.snapshots.length - 1;
+  idx = q.get("step") ? Math.min(+q.get("step"), +s.max) : +s.max; s.value = idx;
   $("log").textContent = replay.snapshots.map((x) => `[${x.step}] ${x.log.replace(/side 0/g, "A").replace(/side 1/g, "B")}`).join("\n");
-  show(+s.value);
+  show(idx, false);
 }
-function show(i) {
-  const snap = replay.snapshots[i]; draw(snap.state);
+function show(i, fx = true) {
+  const snap = replay.snapshots[i]; idx = i; $("slider").value = i;
+  const mv = snap.log.match(/(?:moves|ATTACKS) (\d+)->(\d+)/);
+  draw(snap.state, mv ? +mv[2] : (snap.log.includes(" vs ") ? Number(snap.state.match.pendTo) : undefined));
   const el = $("steplog"); el.textContent = `step ${snap.step}: ${snap.log.replace(/side 0/g, "A").replace(/side 1/g, "B")} `;
-  if (snap.tx && replay.chainId === 84532) { const a = document.createElement("a"); a.href = `https://sepolia.basescan.org/tx/${snap.tx}`; a.target = "_blank"; a.textContent = "view tx"; a.style.color = "var(--acc)"; el.appendChild(a); }
+  if (snap.tx && replay.chainId === 84532) { const a = document.createElement("a"); a.href = `https://sepolia.basescan.org/tx/${snap.tx}`; a.target = "_blank"; a.textContent = "view tx"; el.appendChild(a); }
+  if (fx) playStepFx(snap, replay.snapshots[i - 1]);
 }
-$("slider").oninput = (e) => replay && show(+e.target.value);
+$("slider").oninput = (e) => { const i = +e.target.value; replay && show(i, i === idx + 1); };
+$("prev").onclick = () => replay && idx > 0 && show(idx - 1, false);
+$("next").onclick = () => replay && idx < replay.snapshots.length - 1 && show(idx + 1, true);
+$("play").onclick = () => {
+  if (playing) { clearInterval(playing); playing = null; $("play").textContent = "▶ Play replay"; return; }
+  if (idx >= replay.snapshots.length - 1) show(0, false);
+  $("play").textContent = "⏸ Pause";
+  playing = setInterval(() => { if (idx >= replay.snapshots.length - 1) { $("play").click(); return; } show(idx + 1, true); }, 900);
+};
 $("loadReplay").onclick = () => loadReplay($("replayUrl").value);
 
+// ---------------- picker
+function thumb(item) {
+  switch (item.category) {
+    case "skin": return `<div style="display:flex;gap:2px">${A.pieceSVG({ skin: item.id, rank: 7, side: 0 })}${A.pieceSVG({ skin: item.id, rank: 0, side: 1 })}</div>`;
+    case "fog": return `<div style="display:flex;gap:2px">${A.pieceSVG({ skin: look.skin, fog: item.id, rank: null, side: 0 })}${A.pieceSVG({ skin: look.skin, fog: item.id, rank: null, side: 1 })}</div>`;
+    case "table": return "";
+    case "effect": return `<div style="font-size:30px">${{ 13: "💥", 14: "🔄", 15: "🧨", 16: "🏆" }[item.id]}</div>`;
+    case "trail": return `<div style="width:80%;height:8px;border-radius:6px;background:${item.id === 17 ? "linear-gradient(90deg,transparent,#ff8a1f,#ffd36b)" : "linear-gradient(90deg,transparent,#18f0ff,#fff)"};box-shadow:0 0 12px ${item.id === 17 ? "#ff8a1f" : "#18f0ff"}"></div>`;
+    case "banner": return `<div style="transform:scale(.3);transform-origin:center">${A.BANNERS[item.id].html("Victory", "Beacon captured")}</div>`;
+  }
+}
+function isOn(item) { return item.category === "effect" ? look.fx.includes(item.id) : look[catKey[item.category]] === item.id; }
+function renderPicker() {
+  const cats = Object.keys(CATEGORY_NAMES);
+  $("tabs").innerHTML = cats.map((c) => `<button data-c="${c}" class="${c === tab ? "on" : ""}">${CATEGORY_NAMES[c]}</button>`).join("");
+  $("tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => { tab = b.dataset.c; renderPicker(); }));
+  const items = CATALOG.filter((i) => i.category === tab);
+  $("items").innerHTML = items.map((i) => `<div class="card ${isOn(i) ? "sel" : ""}" data-id="${i.id}" title="${i.desc}">
+    ${owned.has(i.id) ? '<span class="own">OWNED</span>' : ""}
+    <div class="th" style="${i.category === "table" ? `background-image:url('${A.envURL(i.id)}')` : ""}">${thumb(i)}</div>
+    <div class="nm">${i.name}</div><div class="meta"><span style="color:${RARITY_COLORS[i.rarity]}">${i.rarity}</span><span>${i.price} fUSD · #${i.id}</span></div></div>`).join("");
+  $("items").querySelectorAll(".card").forEach((c) => (c.onclick = () => toggle(CATALOG.find((i) => i.id === +c.dataset.id))));
+}
+function toggle(item) {
+  if (item.category === "effect") { look.fx = look.fx.includes(item.id) ? look.fx.filter((x) => x !== item.id) : [...look.fx, item.id]; demoEffect(item.id); }
+  else { const k = catKey[item.category]; look[k] = look[k] === item.id ? 0 : item.id; }
+  refresh();
+  if (item.category === "trail" && look.trail) demoTrail();
+}
+function refresh() { applyTable(); renderPicker(); renderLegend(); if (current) { const ls = $("board").querySelector(".last")?.dataset.sq; draw(current, ls ? +ls : undefined); } }
+function anyPieceCell() { return [...$("board").querySelectorAll(".cell")].find((c) => c.querySelector(".piece") && +c.dataset.sq > 20 && +c.dataset.sq < 44) || $("board").querySelector(".cell .piece")?.parentElement || cellEl(27); }
+function demoEffect(id) {
+  const el = anyPieceCell(), st = $("stage");
+  const color = A.skinGlow(look.skin, 0);
+  if (id === 16 && !look.banner) A.showBanner(st, 0, "Victory", "Beacon captured");
+  A.EFFECTS[id]?.(st, el, { color });
+}
+function demoTrail() { A.trail($("stage"), cellEl(10), cellEl(34), look.trail); }
+$("fxdemo").onclick = () => { const ids = look.fx.length ? look.fx : [14, 13, 15, 16]; ids.forEach((id, i) => setTimeout(() => demoEffect(id), i * 1100)); if (look.trail) setTimeout(demoTrail, ids.length * 1100); if (look.banner) setTimeout(() => A.showBanner($("stage"), look.banner, "Victory", "Beacon captured"), ids.length * 1100 + 300); };
+$("reset").onclick = () => { Object.assign(look, { ...DEFAULT, fx: [] }); refresh(); };
+
+function renderLegend() {
+  const order = [7, 6, 5, 4, 3, 2, 1, 8, 0], count = { 7: 1, 6: 1, 5: 2, 4: 3, 3: 2, 2: 3, 1: 1, 8: 2, 0: 1 };
+  $("legend").innerHTML = order.map((r) => `<div>${A.pieceSVG({ skin: look.skin, rank: r, side: 0, pip: false })}<span><b>${A.RANKS[r]}</b> ×${count[r]}</span></div>`).join("") +
+    `<div>${A.pieceSVG({ skin: look.skin, rank: null, side: 1, fog: look.fog })}<span><b>Hidden</b> piece</span></div>`;
+}
+
+// ---------------- ownership (read-only)
+const RANK_ORDER = { Common: 0, Rare: 1, Epic: 2, Legendary: 3 };
+async function checkOwner(addr) {
+  $("ownmsg").textContent = "checking…";
+  try {
+    const { createPublicClient, http, parseAbi } = await import("https://esm.sh/viem@2");
+    const client = createPublicClient({ transport: http("https://sepolia.base.org") });
+    const ids = CATALOG.map((i) => BigInt(i.id));
+    const bals = await client.readContract({ address: COSMETICS, abi: parseAbi(["function balanceOfBatch(address[],uint256[]) view returns (uint256[])"]), functionName: "balanceOfBatch", args: [ids.map(() => addr), ids] });
+    owned = new Set(CATALOG.filter((_, i) => bals[i] > 0n).map((i) => i.id));
+    // auto-apply: best owned item per category, all owned effects
+    for (const cat of ["skin", "table", "fog", "trail", "banner"]) {
+      const best = CATALOG.filter((i) => i.category === cat && owned.has(i.id)).sort((a, b) => RANK_ORDER[b.rarity] - RANK_ORDER[a.rarity])[0];
+      if (best) look[catKey[cat]] = best.id;
+    }
+    const fx = CATALOG.filter((i) => i.category === "effect" && owned.has(i.id)).map((i) => i.id);
+    if (fx.length) look.fx = fx;
+    $("ownmsg").textContent = owned.size ? `${owned.size} cosmetic(s) owned, applied` : "no Fogline cosmetics owned yet";
+    refresh();
+  } catch (e) { $("ownmsg").textContent = "could not read: " + e.message.split("\n")[0]; }
+}
+$("check").onclick = () => checkOwner($("owner").value.trim());
+$("connect").onclick = async () => {
+  if (!window.ethereum) { $("ownmsg").textContent = "no browser wallet found; paste an address instead"; return; }
+  const [a] = await window.ethereum.request({ method: "eth_requestAccounts" });
+  $("owner").value = a; checkOwner(a);
+};
+
+// ---------------- live
 let timer;
 $("loadLive").onclick = async () => {
   const { createPublicClient, http, parseAbi } = await import("https://esm.sh/viem@2");
@@ -124,14 +269,18 @@ $("loadLive").onclick = async () => {
   const client = createPublicClient({ transport: http($("rpc").value) });
   const address = $("game").value, id = BigInt($("mid").value);
   const tick = async () => {
-    const [board, pieces, match] = await Promise.all(["getBoard","getPieces","getMatch"].map((f) => client.readContract({ address, abi, functionName: f, args: [id] })));
+    const [board, pieces, match] = await Promise.all(["getBoard", "getPieces", "getMatch"].map((f) => client.readContract({ address, abi, functionName: f, args: [id] })));
     draw({ board, pieces, match }); $("steplog").textContent = "live";
   };
   clearInterval(timer); await tick(); timer = setInterval(tick, 4000);
 };
-const q = new URLSearchParams(location.search);
+
+applyTable(); renderPicker(); renderLegend();
+if (q.get("tab")) { tab = q.get("tab"); renderPicker(); }
 if (q.get("game")) { $("game").value = q.get("game"); if (q.get("rpc")) $("rpc").value = q.get("rpc"); if (q.get("match")) $("mid").value = q.get("match"); $("loadLive").click(); }
-else loadReplay(q.get("replay") || "replays/base-sepolia-match-1.json");
+else await loadReplay(q.get("replay") || "replays/base-sepolia-match-1.json");
+if (q.get("owner")) { $("owner").value = q.get("owner"); checkOwner(q.get("owner")); }
+window.__fogline = { A, look, show, demoEffect, demoTrail, refresh };
 </script>
 </body>
 </html>

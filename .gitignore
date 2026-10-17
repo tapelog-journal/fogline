@@ -8,3 +8,4 @@ agent/dist/
 deployments/31337.json
 broadcast/
 demo/
+tools/render/node_modules/

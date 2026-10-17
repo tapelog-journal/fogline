@@ -1,0 +1,30 @@
+// Fogline cosmetic catalog. Decorative only, zero gameplay effect. Prices in test fUSD (Base Sepolia, valueless).
+// kind = equip slot in the FoglineCosmetics contract: 0 PieceSkin (piece-related), 1 BoardTheme (board/scene-related).
+export const COSMETICS = "0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7";
+export const RARITY_COLORS = { Common: "#9aa4ad", Rare: "#4da3ff", Epic: "#b56bff", Legendary: "#ffb020" };
+export const CATALOG = [
+  { id: 1, name: "Tape Neon pieces", category: "skin", kind: 0, rarity: "Common", price: 2, max: 0, desc: "Hazard-tape squares in TapeLog yellow and black." },
+  { id: 2, name: "Candle Glow pieces", category: "skin", kind: 0, rarity: "Rare", price: 3, max: 500, desc: "Warm amber and lavender wax tokens with a tiny flame." },
+  { id: 3, name: "Midnight Fog board", category: "table", kind: 1, rarity: "Common", price: 1, max: 0, desc: "Moonlit slate under rolling blue fog." },
+  { id: 4, name: "Paper Ledger board", category: "table", kind: 1, rarity: "Common", price: 1, max: 0, desc: "Ruled ledger paper, fountain pen and ink pot." },
+  { id: 5, name: "Neon Circuit", category: "skin", kind: 0, rarity: "Rare", price: 5, max: 0, desc: "Hex chips with glowing magenta and cyan traces." },
+  { id: 6, name: "Obsidian & Gold", category: "skin", kind: 0, rarity: "Legendary", price: 20, max: 100, desc: "Black glass versus marble, edged in gold filigree." },
+  { id: 7, name: "Paper Origami", category: "skin", kind: 0, rarity: "Rare", price: 5, max: 0, desc: "Folded paper diamonds in saffron and sky blue." },
+  { id: 8, name: "Frost Glass", category: "skin", kind: 0, rarity: "Epic", price: 10, max: 300, desc: "Translucent frosted glass with ice sparkles." },
+  { id: 9, name: "War-Room Oak", category: "table", kind: 1, rarity: "Rare", price: 6, max: 0, desc: "Lamp-lit oak, old maps and a brass compass." },
+  { id: 10, name: "Deep-Space Bridge", category: "table", kind: 1, rarity: "Epic", price: 12, max: 300, desc: "A starship tactical table under a violet nebula." },
+  { id: 11, name: "Misty Marsh at Dawn", category: "table", kind: 1, rarity: "Rare", price: 6, max: 0, desc: "A stone slab among reeds as the sun burns off the mist." },
+  { id: 12, name: "Retro Arcade CRT", category: "table", kind: 1, rarity: "Epic", price: 12, max: 300, desc: "Synthwave sunset, neon grid and scanlines." },
+  { id: 13, name: "Capture Burst", category: "effect", kind: 1, rarity: "Rare", price: 4, max: 0, desc: "A ring and spark burst whenever a piece is taken." },
+  { id: 14, name: "Reveal Flip & Glow", category: "effect", kind: 1, rarity: "Common", price: 2, max: 0, desc: "Pieces flip in 3D and glow as their rank is revealed." },
+  { id: 15, name: "Mine Blast", category: "effect", kind: 1, rarity: "Rare", price: 4, max: 0, desc: "Shockwaves, debris and a board shake when a Mine goes off." },
+  { id: 16, name: "Beacon Victory", category: "effect", kind: 1, rarity: "Legendary", price: 15, max: 100, desc: "A light beam, rays and confetti when a Beacon falls." },
+  { id: 17, name: "Ember Trail", category: "trail", kind: 0, rarity: "Rare", price: 3, max: 0, desc: "Moving pieces leave drifting embers." },
+  { id: 18, name: "Comet Trail", category: "trail", kind: 0, rarity: "Epic", price: 6, max: 0, desc: "A cyan comet streak follows every move." },
+  { id: 19, name: "Ink Fog", category: "fog", kind: 0, rarity: "Common", price: 2, max: 0, desc: "Hidden pieces wear a sumi-ink swirl." },
+  { id: 20, name: "Aurora Fog", category: "fog", kind: 0, rarity: "Epic", price: 6, max: 0, desc: "Hidden pieces shimmer with northern-lights colour." },
+  { id: 21, name: "Gilded Victory Banner", category: "banner", kind: 1, rarity: "Rare", price: 4, max: 0, desc: "A gold ribbon banner for the winner." },
+  { id: 22, name: "Tape Victory Banner", category: "banner", kind: 1, rarity: "Common", price: 2, max: 0, desc: "Hazard-tape banner in TapeLog yellow." },
+];
+export const CATEGORY_NAMES = { skin: "Piece skins", table: "Tabletops", effect: "Effects", trail: "Trails", fog: "Fog styles", banner: "Victory banners" };
+export const tokenFile = (id) => id.toString(16).padStart(64, "0");

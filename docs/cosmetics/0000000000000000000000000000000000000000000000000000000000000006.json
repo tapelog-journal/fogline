@@ -1,0 +1,36 @@
+{
+ "name": "Obsidian & Gold",
+ "description": "Black glass versus marble, edged in gold filigree. Fogline cosmetic (Piece skins). Purely decorative: zero gameplay effect. Base Sepolia testnet item priced in valueless test fUSD. Game for entertainment. Not investment advice.",
+ "image": "https://tapelog-journal.github.io/fogline/cosmetics/img/6.png",
+ "external_url": "https://tapelog-journal.github.io/fogline/?skin=6",
+ "attributes": [
+  {
+   "trait_type": "Category",
+   "value": "Piece skins"
+  },
+  {
+   "trait_type": "Rarity",
+   "value": "Legendary"
+  },
+  {
+   "trait_type": "Price (test fUSD)",
+   "value": 20
+  },
+  {
+   "trait_type": "Max supply",
+   "value": 100
+  },
+  {
+   "trait_type": "Equip slot",
+   "value": "PieceSkin"
+  },
+  {
+   "trait_type": "Gameplay effect",
+   "value": "None"
+  },
+  {
+   "trait_type": "Network",
+   "value": "Base Sepolia (testnet)"
+  }
+ ]
+}

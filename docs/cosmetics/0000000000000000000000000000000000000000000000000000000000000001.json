@@ -1,13 +1,35 @@
 {
  "name": "Tape Neon pieces",
- "description": "Fogline cosmetic (PieceSkin). Purely decorative, no gameplay effect. Base Sepolia testnet item. Game for entertainment. Not investment advice.",
+ "description": "Hazard-tape squares in TapeLog yellow and black. Fogline cosmetic (Piece skins). Purely decorative: zero gameplay effect. Base Sepolia testnet item priced in valueless test fUSD. Game for entertainment. Not investment advice.",
+ "image": "https://tapelog-journal.github.io/fogline/cosmetics/img/1.png",
+ "external_url": "https://tapelog-journal.github.io/fogline/?skin=1",
  "attributes": [
   {
-   "trait_type": "kind",
+   "trait_type": "Category",
+   "value": "Piece skins"
+  },
+  {
+   "trait_type": "Rarity",
+   "value": "Common"
+  },
+  {
+   "trait_type": "Price (test fUSD)",
+   "value": 2
+  },
+  {
+   "trait_type": "Max supply",
+   "value": "Unlimited"
+  },
+  {
+   "trait_type": "Equip slot",
    "value": "PieceSkin"
   },
   {
-   "trait_type": "network",
+   "trait_type": "Gameplay effect",
+   "value": "None"
+  },
+  {
+   "trait_type": "Network",
    "value": "Base Sepolia (testnet)"
   }
  ]

@@ -37,6 +37,49 @@ npx tsx src/cli.ts play <matchId>        # baseline bot plays to the end, reveal
 
 To let an AI assistant play, run `npm run build && FOGLINE_CHAIN_ID=84532 node dist/mcp.js` and add it as a stdio MCP server. Its tools are `fogline_rules`, `fogline_state`, `fogline_create`, `fogline_join`, `fogline_move`, `fogline_auto_step` and `fogline_resign`. To watch a match live, open `https://tapelog-journal.github.io/fogline/?game=0x059db9310c1DFB3009DAd13d043589DDBe75C874&match=<id>`.
 
+## Art and cosmetics
+
+![Fogline viewer with the Obsidian & Gold skin on the Deep-Space Bridge tabletop](docs/art/promo/hero-viewer.jpg)
+
+All of Fogline's art is original and made in code. Pieces, boards, tabletops and effects are hand-built SVG, CSS and Web Animations in [`docs/art/art.js`](docs/art/art.js), so they stay crisp at any size. The free default set is **Fogline Standard**: all 9 piece types for both sides, plus a fogged back for hidden pieces, on the **Slate Table** board ([sheet](docs/art/base-pieces.png)).
+
+Cosmetics are **decorative only and have zero gameplay effect**. The game contract never reads the cosmetics contract. All 22 items are listed onchain in [FoglineCosmetics on Base Sepolia](https://sepolia.basescan.org/address/0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7). Prices are in valueless test fUSD. Metadata is at `https://tapelog-journal.github.io/fogline/cosmetics/{id}.json`, with the id as 64-character hex, and images are at `cosmetics/img/<id>.png`. The full list is in [`docs/cosmetics/catalog.json`](docs/cosmetics/catalog.json).
+
+| # | Item | Type | Rarity | Price (fUSD) | Supply |
+|---|---|---|---|---|---|
+| 1 | Tape Neon pieces | Piece skin | Common | 2 | ∞ |
+| 2 | Candle Glow pieces | Piece skin | Rare | 3 | 500 |
+| 5 | Neon Circuit | Piece skin | Rare | 5 | ∞ |
+| 6 | Obsidian & Gold | Piece skin | Legendary | 20 | 100 |
+| 7 | Paper Origami | Piece skin | Rare | 5 | ∞ |
+| 8 | Frost Glass | Piece skin | Epic | 10 | 300 |
+| 3 | Midnight Fog board | Tabletop | Common | 1 | ∞ |
+| 4 | Paper Ledger board | Tabletop | Common | 1 | ∞ |
+| 9 | War-Room Oak | Tabletop | Rare | 6 | ∞ |
+| 10 | Deep-Space Bridge | Tabletop | Epic | 12 | 300 |
+| 11 | Misty Marsh at Dawn | Tabletop | Rare | 6 | ∞ |
+| 12 | Retro Arcade CRT | Tabletop | Epic | 12 | 300 |
+| 13 | Capture Burst | Effect | Rare | 4 | ∞ |
+| 14 | Reveal Flip & Glow | Effect | Common | 2 | ∞ |
+| 15 | Mine Blast | Effect | Rare | 4 | ∞ |
+| 16 | Beacon Victory | Effect | Legendary | 15 | 100 |
+| 17 | Ember Trail | Piece trail | Rare | 3 | ∞ |
+| 18 | Comet Trail | Piece trail | Epic | 6 | ∞ |
+| 19 | Ink Fog | Fog style | Common | 2 | ∞ |
+| 20 | Aurora Fog | Fog style | Epic | 6 | ∞ |
+| 21 | Gilded Victory Banner | Victory banner | Rare | 4 | ∞ |
+| 22 | Tape Victory Banner | Victory banner | Common | 2 | ∞ |
+
+**Previewing in the viewer.**
+- **Try anything:** open the Cosmetics panel and click any item to try it on the board and in the match replay. Press **Play replay** to watch effects fire on real onchain clashes.
+- **Auto-apply what a wallet owns:** connect a wallet or paste an address. The viewer reads `balanceOfBatch` from the cosmetics contract (read-only, no signing) and applies the best item owned in each category, plus all owned effects.
+- **Example:** [this demo bot wallet](https://tapelog-journal.github.io/fogline/?owner=0x9b2B2f1A26123206f90e7095a7311a6dD0Fab874) bought items #6, #10, #16 and #20 on testnet.
+- **URL parameters:** `?skin=6&table=10&fog=20&trail=18&banner=21&fx=13,14,15,16` previews a look directly.
+
+**Contract slots.** The contract has two equip slots. Skins, trails and fog styles use `PieceSkin`. Tabletops, effects and banners use `BoardTheme`. The viewer groups items by the `Category` attribute in the metadata.
+
+**Rendering.** To re-render item images, the contact sheet and effect clips, serve `docs/` locally and run `node tools/render/render.mjs`. This needs puppeteer-core and local Chrome. Item metadata is generated with `node tools/render/metadata.mjs`.
+
 ## Rules
 
 | Piece | Rank | Count | Notes |

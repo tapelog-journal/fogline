@@ -1,0 +1,81 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fogline cosmetics sheet</title>
+<style>
+ body { margin:0; background:#0b0b0b; color:#f4f4f4; font:14px system-ui,sans-serif }
+ .card { width:512px; height:512px; position:relative; overflow:hidden; background:#101010; display:flex; flex-direction:column }
+ .vis { flex:1; position:relative; overflow:hidden; background:#0d0d0d center/cover; display:flex; align-items:center; justify-content:center }
+ .foot { height:92px; padding:10px 16px; background:linear-gradient(#151515,#0c0c0c); border-top:3px solid var(--rc) }
+ .foot .n { font-size:22px; font-weight:800 } .foot .m { color:#aaa; display:flex; justify-content:space-between; margin-top:2px }
+ .foot .r { color:var(--rc); font-weight:700 } .brand { position:absolute; top:10px; left:12px; font-weight:800; font-size:13px; color:#ffd400; text-shadow:0 1px 3px #000; z-index:9 }
+ .grid { display:grid; grid-template-columns:repeat(5,72px); gap:8px } .grid svg { width:72px; height:72px }
+ .mini { display:grid; grid-template-columns:repeat(4,64px); border:3px solid var(--frame); border-radius:8px; padding:6px; background:rgba(0,0,0,.25) }
+ .mini div { width:64px; height:64px; display:flex; align-items:center; justify-content:center; border:1px solid var(--line) }
+ .mini svg { width:54px; height:54px } .mini .l { background:var(--light) } .mini .d { background:var(--dark) }
+ #sheet { display:grid; grid-template-columns:repeat(6,512px); gap:16px; padding:28px; width:max-content }
+ #sheetHead { padding:28px 28px 0; } #sheetHead h1 { margin:0; font-size:44px } #sheetHead h1 span { color:#ffd400 } #sheetHead p { color:#aaa; font-size:18px; margin:6px 0 0 }
+</style></head><body>
+<div id="sheetHead" hidden><h1><span>Fogline</span> cosmetics catalog</h1><p>22 decorative items · zero gameplay effect · Base Sepolia testnet · prices in valueless test fUSD · Game for entertainment. Not investment advice.</p></div>
+<div id="root"></div>
+<script type="module">
+import * as A from "./art.js";
+import { CATALOG, RARITY_COLORS, CATEGORY_NAMES } from "./catalog.js";
+const q = new URLSearchParams(location.search);
+
+function miniBoard(table, skin, fog, extra = "") {
+  const t = A.tableStyle(table);
+  const pieces = { 0: [7, 0], 2: [null, 1], 5: [3, 0], 6: [null, 1], 7: [5, 1], 9: [null, 0], 10: [2, 1], 12: [8, 0], 15: [null, 1] };
+  let cells = "";
+  for (let i = 0; i < 16; i++) { const p = pieces[i]; cells += `<div class="${(i + (i >> 2)) % 2 ? "l" : "d"}" data-i="${i}">${p ? A.pieceSVG({ skin, rank: p[0], side: p[1], fog, pip: false }) : ""}</div>`; }
+  return `<div class="mini" style="--frame:${t.frame};--line:${t.line};--light:${t.light};--dark:${t.dark}">${cells}</div>${extra}`;
+}
+function visual(item) {
+  const env = (id) => `background-image:url('${A.envURL(id)}')`;
+  switch (item.category) {
+    case "skin": {
+      let g = "";
+      for (const side of [0, 1]) for (const r of [7, 6, 5, 4, 3, 2, 1, 8, 0, null]) g += A.pieceSVG({ skin: item.id, rank: r, side });
+      return [`background:radial-gradient(circle at 50% 40%,#262626,#0a0a0a)`, `<div class="grid">${g}</div>`];
+    }
+    case "table": return [env(item.id), miniBoard(item.id, 0, 0)];
+    case "fog": return [`background:radial-gradient(circle at 50% 40%,#1f2a2a,#090909)`, `<div style="display:flex;gap:18px">${[0, 1].map((s) => `<div style="width:170px;height:170px">${A.pieceSVG({ skin: 0, fog: item.id, rank: null, side: s })}</div>`).join("")}</div>`];
+    case "effect": return [env(item.id === 16 ? 9 : item.id === 15 ? 3 : 0), miniBoard(item.id === 16 ? 9 : item.id === 15 ? 3 : 0, item.id === 16 ? 6 : 0, 0)];
+    case "trail": return [env(10), miniBoard(10, 5, 0)];
+    case "banner": return [env(item.id === 21 ? 9 : 12), `<div style="transform:scale(.92)">${A.BANNERS[item.id].html("Victory", "Beacon captured")}</div>`];
+  }
+}
+function card(item) {
+  const [bg, inner] = visual(item);
+  const el = document.createElement("div"); el.className = "card"; el.style.setProperty("--rc", RARITY_COLORS[item.rarity] ?? "#ffd400");
+  el.innerHTML = `<div class="brand">FOGLINE · TapeLog</div><div class="vis" style="${bg}">${inner}</div><div class="foot"><div class="n">${item.name}</div><div class="m"><span class="r">${item.rarity}</span><span>${CATEGORY_NAMES[item.category]} · ${item.price} fUSD · #${item.id}</span></div><div class="m" style="font-size:11.5px"><span>Decorative only, no gameplay effect</span><span>Base Sepolia testnet</span></div></div>`;
+  return el;
+}
+/** freeze an effect/trail on a card at time t (ms) */
+function freezeFx(el, item, t) {
+  const vis = el.querySelector(".vis"); vis.style.position = "relative";
+  const cells = vis.querySelectorAll(".mini div");
+  const target = cells[item.id === 16 ? 6 : 5];
+  if (item.category === "effect") A.EFFECTS[item.id](vis, target, { color: item.id === 16 ? "#e9c46a" : "#ffd400" });
+  if (item.category === "trail") A.trail(vis, cells[12], cells[3], item.id);
+  if (item.id === 16) A.showBanner(vis, 21, "Victory", "Beacon captured");
+  document.getAnimations().forEach((a) => { a.pause(); a.currentTime = t; });
+}
+const root = document.getElementById("root");
+const FREEZE = { 13: 170, 14: 330, 15: 300, 16: 900, 17: 420, 18: 330 };
+if (q.get("item")) {
+  const item = CATALOG.find((i) => i.id === +q.get("item"));
+  const el = card(item); root.appendChild(el);
+  if (FREEZE[item.id]) requestAnimationFrame(() => freezeFx(el, item, FREEZE[item.id]));
+} else if (q.get("all")) {
+  document.getElementById("sheetHead").hidden = false;
+  const sh = document.createElement("div"); sh.id = "sheet"; root.appendChild(sh);
+  const els = CATALOG.map((i) => { const e = card(i); sh.appendChild(e); return [e, i]; });
+  requestAnimationFrame(() => els.forEach(([e, i]) => FREEZE[i.id] && freezeFx(e, i, FREEZE[i.id])));
+} else if (q.get("base")) {
+  // default art board: both sides, all ranks, hidden backs
+  document.body.style.background = "#151515";
+  let g = "";
+  for (const side of [0, 1]) for (const r of [7, 6, 5, 4, 3, 2, 1, 8, 0, null]) g += `<div style="text-align:center;font-size:12px;color:#aaa">${A.pieceSVG({ skin: 0, rank: r, side })}<div>${r === null ? "Hidden" : A.RANKS[r]}</div></div>`;
+  root.innerHTML = `<div style="padding:24px"><h2 style="margin:0 0 12px;color:#ffd400">Fogline Standard pieces (free default)</h2><div style="display:grid;grid-template-columns:repeat(10,96px);gap:12px">${g.replaceAll('width="100%" height="100%"', 'width="96" height="96"')}</div></div>`;
+}
+window.__ready = true;
+</script></body></html>
