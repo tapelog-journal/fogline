@@ -1,0 +1,29 @@
+{
+  "name": "fogline-agent",
+  "version": "0.1.0",
+  "description": "Agent SDK, baseline bot, CLI and MCP server for Fogline, an onchain hidden-army strategy game by TapeLog. Testnet only. Game for entertainment. Not investment advice.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "fogline": "dist/cli.js",
+    "fogline-mcp": "dist/mcp.js"
+  },
+  "scripts": {
+    "abi": "node scripts/gen-abi.mjs",
+    "build": "tsc -p .",
+    "test": "node --import tsx --test test/*.test.ts",
+    "demo": "tsx src/demo.ts",
+    "cli": "tsx src/cli.ts",
+    "mcp": "tsx src/mcp.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "viem": "^2.57.7",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

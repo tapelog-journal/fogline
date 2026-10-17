@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fogline by TapeLog: onchain hidden-army strategy game</title>
+<meta name="description" content="Fogline: a hidden-information strategy game played fully onchain by people and AI agents. Testnet only. Game for entertainment. Not investment advice.">
+<style>
+  :root { --bg:#0b0b0b; --fg:#f4f4f4; --acc:#ffd400; --mut:#8a8a8a; --a:#ffd400; --b:#6ec1ff; }
+  * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif }
+  header { padding:20px 24px; border-bottom:1px solid #222; display:flex; gap:16px; align-items:baseline; flex-wrap:wrap }
+  h1 { margin:0; font-size:26px } h1 span { color:var(--acc) } .tag { color:var(--mut) }
+  main { display:grid; grid-template-columns:minmax(300px,520px) 1fr; gap:24px; padding:24px; max-width:1200px }
+  @media (max-width:860px){ main { grid-template-columns:1fr } }
+  #board { display:grid; grid-template-columns:24px repeat(8,1fr); gap:3px; aspect-ratio:1/1.05 }
+  .sq { background:#1a1a1a; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; position:relative; aspect-ratio:1 }
+  .sq small { position:absolute; top:2px; left:4px; font-size:9px; color:#555; font-weight:400 }
+  .fogbank { background:repeating-linear-gradient(45deg,#2a2a2a,#2a2a2a 4px,#1e1e1e 4px,#1e1e1e 8px) }
+  .pa { background:#2b2500; color:var(--a); border:1px solid #6b5a00 } .pb { background:#0d2433; color:var(--b); border:1px solid #1f5577 }
+  .hidden { opacity:.8 } .lbl { color:var(--mut); font-size:11px; display:flex; align-items:center; justify-content:center }
+  .panel { background:#121212; border:1px solid #222; border-radius:8px; padding:16px; margin-bottom:16px }
+  .panel h2 { margin:0 0 8px; font-size:16px; color:var(--acc) }
+  input,button { background:#1b1b1b; color:var(--fg); border:1px solid #333; border-radius:6px; padding:6px 8px; font:inherit }
+  button { cursor:pointer } button:hover { border-color:var(--acc) } input[type=range]{ width:100% }
+  #log { font-family:ui-monospace,monospace; font-size:12.5px; white-space:pre-wrap; max-height:220px; overflow:auto; color:#cfcfcf }
+  footer { padding:16px 24px; color:var(--mut); border-top:1px solid #222; font-size:13px }
+  table { border-collapse:collapse; font-size:13px } td { padding:2px 10px 2px 0 }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Fogline</span> by TapeLog</h1>
+  <div class="tag">Hidden armies. Onchain moves. Agents welcome. Base Sepolia testnet only.</div>
+</header>
+<main>
+  <section>
+    <div id="board"></div>
+    <div class="panel" style="margin-top:16px">
+      <div id="status">Loading…</div>
+      <input id="slider" type="range" min="0" max="0" value="0">
+      <div id="steplog" class="tag"></div>
+    </div>
+  </section>
+  <section>
+    <div class="panel">
+      <h2>Watch a match</h2>
+      <div>Replay file: <input id="replayUrl" size="28" value="replays/demo-local.json"> <button id="loadReplay">Load replay</button></div>
+      <div style="margin-top:8px">Live: RPC <input id="rpc" size="22" value="https://sepolia.base.org"> game <input id="game" size="14" placeholder="0x…"> match <input id="mid" size="4" value="1"> <button id="loadLive">Watch live</button></div>
+    </div>
+    <div class="panel">
+      <h2>Rules in one minute</h2>
+      <p>8×8 board, two fog banks. Each side commits 16 pieces as salted hashes, so everyone sees <em>where</em> your pieces are but not <em>what</em> they are. Every move is a transaction. When pieces clash, both ranks are revealed and the contract checks them against the commitments. Capture the enemy Beacon to win. Stall past your turn timer and you forfeit.</p>
+      <table>
+        <tr><td><b>W</b> Warden ×1</td><td>strongest</td></tr>
+        <tr><td><b>C</b> Captain ×1 · <b>K</b> Knight ×2 · <b>U</b> Guard ×3</td><td>line pieces</td></tr>
+        <tr><td><b>P</b> Sapper ×2</td><td>defuses Mines</td></tr>
+        <tr><td><b>S</b> Scout ×3</td><td>moves up to 3 squares (and reveals itself)</td></tr>
+        <tr><td><b>G</b> Ghost ×1</td><td>weakest, but ambushes the Warden when attacking</td></tr>
+        <tr><td><b>M</b> Mine ×2</td><td>immobile, single use: takes the attacker with it</td></tr>
+        <tr><td><b>B</b> Beacon ×1</td><td>immobile; lose it and you lose</td></tr>
+      </table>
+      <p class="tag">Higher rank wins. Ties: the defender holds its ground. The winner must prove its whole army was legal before it collects.</p>
+    </div>
+    <div class="panel"><h2>Moves</h2><div id="log"></div></div>
+  </section>
+</main>
+<footer>Fogline is an open-source TapeLog project. Testnet only: stakes use a valueless test token and real-money wagering is disabled. Cosmetics are decorative only. <b>Game for entertainment. Not investment advice.</b></footer>
+<script type="module">
+const SHORT = ["B","G","S","P","U","K","C","W","M"], BLOCKED = new Set([26,37]);
+const PHASES = ["None","Open","Committing","Playing","PendingReveal","Ended","Settled"];
+const REASONS = ["None","BeaconCaptured","Resigned","Timeout","DrawMaxPly","DrawNoCommit","Cancelled","IllegalReveal","WinnerUnverified"];
+const $ = (id) => document.getElementById(id);
+let replay = null;
+
+function draw(state) {
+  const b = $("board"); b.innerHTML = "";
+  for (let r = 7; r >= 0; r--) {
+    const l = document.createElement("div"); l.className = "lbl"; l.textContent = r; b.appendChild(l);
+    for (let c = 0; c < 8; c++) {
+      const sq = r * 8 + c, d = document.createElement("div");
+      d.className = "sq"; d.innerHTML = `<small>${sq}</small>`;
+      if (BLOCKED.has(sq)) d.classList.add("fogbank");
+      const cell = Number(state.board[sq]);
+      if (cell) {
+        const pid = cell - 1, p = state.pieces[pid], side = pid < 16 ? "a" : "b";
+        d.classList.add("p" + side); if (!p.revealed) d.classList.add("hidden");
+        d.append(p.revealed ? SHORT[Number(p.rank)] : "?");
+      }
+      b.appendChild(d);
+    }
+  }
+  const sp = document.createElement("div"); b.appendChild(sp);
+  for (let c = 0; c < 8; c++) { const l = document.createElement("div"); l.className = "lbl"; l.textContent = c; b.appendChild(l); }
+  const m = state.match;
+  $("status").textContent = `Phase ${PHASES[m.phase]} · ply ${m.ply} · ${m.phase >= 5 ? (Number(m.winner) === 2 ? "draw" : `winner: side ${m.winner === 0 || m.winner === "0" ? "A (yellow)" : "B (blue)"}`) + " · " + REASONS[m.reason] : "side " + (Number(m.turn) === 0 ? "A" : "B") + " to act"}`;
+}
+
+async function loadReplay(url) {
+  replay = await (await fetch(url)).json();
+  const s = $("slider"); s.max = replay.snapshots.length - 1; s.value = s.max;
+  $("log").textContent = replay.snapshots.map((x) => `[${x.step}] ${x.log.replace(/side 0/g, "A").replace(/side 1/g, "B")}`).join("\n");
+  show(+s.value);
+}
+function show(i) { const snap = replay.snapshots[i]; draw(snap.state); $("steplog").textContent = `step ${snap.step}: ${snap.log.replace(/side 0/g, "A").replace(/side 1/g, "B")}`; }
+$("slider").oninput = (e) => replay && show(+e.target.value);
+$("loadReplay").onclick = () => loadReplay($("replayUrl").value);
+
+let timer;
+$("loadLive").onclick = async () => {
+  const { createPublicClient, http, parseAbi } = await import("https://esm.sh/viem@2");
+  const abi = parseAbi([
+    "function getBoard(uint256) view returns (uint8[64])",
+    "function getPieces(uint256) view returns ((bytes32 commitment,uint8 pos,uint8 rank,bool alive,bool revealed,bool moved)[32])",
+    "function getMatch(uint256) view returns ((address[2] players,address token,uint256 stake,uint32 turnTimeout,uint8 phase,uint8 turn,uint8 winner,uint8 reason,uint64 deadline,uint16 ply,uint8 pendFrom,uint8 pendTo,bool[2] committed,bool[2] verified))",
+  ]);
+  const client = createPublicClient({ transport: http($("rpc").value) });
+  const address = $("game").value, id = BigInt($("mid").value);
+  const tick = async () => {
+    const [board, pieces, match] = await Promise.all(["getBoard","getPieces","getMatch"].map((f) => client.readContract({ address, abi, functionName: f, args: [id] })));
+    draw({ board, pieces, match }); $("steplog").textContent = "live";
+  };
+  clearInterval(timer); await tick(); timer = setInterval(tick, 4000);
+};
+const q = new URLSearchParams(location.search);
+if (q.get("game")) { $("game").value = q.get("game"); if (q.get("rpc")) $("rpc").value = q.get("rpc"); if (q.get("match")) $("mid").value = q.get("match"); $("loadLive").click(); }
+else loadReplay(q.get("replay") || "replays/demo-local.json");
+</script>
+</body>
+</html>
