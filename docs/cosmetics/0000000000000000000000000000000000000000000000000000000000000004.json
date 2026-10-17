@@ -1,0 +1,14 @@
+{
+ "name": "Paper Ledger board",
+ "description": "Fogline cosmetic (BoardTheme). Purely decorative, no gameplay effect. Base Sepolia testnet item. Game for entertainment. Not investment advice.",
+ "attributes": [
+  {
+   "trait_type": "kind",
+   "value": "BoardTheme"
+  },
+  {
+   "trait_type": "network",
+   "value": "Base Sepolia (testnet)"
+  }
+ ]
+}

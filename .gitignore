@@ -6,4 +6,5 @@ agent/dist/
 .env
 *.key
 deployments/31337.json
+broadcast/
 demo/

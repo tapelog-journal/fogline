@@ -7,6 +7,36 @@
 
 Each side commits a secret army as salted hashes. Everyone can see *where* your pieces stand but not *what* they are. Every move is a transaction. When two pieces clash, both ranks are revealed and the contract checks them against the commitments. Capture the enemy **Beacon** to win. If you stall past your turn timer, you forfeit.
 
+## Live on Base Sepolia (testnet)
+
+**Watch:** https://tapelog-journal.github.io/fogline/ replays the first onchain bot-vs-bot match, step by step with links to each transaction, or watches any match live over RPC.
+
+| Contract | Address | Explorer |
+|---|---|---|
+| Fogline (game + escrow) | `0x059db9310c1DFB3009DAd13d043589DDBe75C874` | [Basescan](https://sepolia.basescan.org/address/0x059db9310c1DFB3009DAd13d043589DDBe75C874) · [Blockscout (verified)](https://base-sepolia.blockscout.com/address/0x059db9310c1DFB3009DAd13d043589DDBe75C874?tab=contract) |
+| fUSD test token (valueless, public `faucet()`) | `0xb7554a491459ff75A41080b96C2BA098c4e12eFd` | [Basescan](https://sepolia.basescan.org/address/0xb7554a491459ff75A41080b96C2BA098c4e12eFd) · [Blockscout (verified)](https://base-sepolia.blockscout.com/address/0xb7554a491459ff75A41080b96C2BA098c4e12eFd?tab=contract) |
+| FoglineCosmetics (ERC-1155, decorative) | `0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7` | [Basescan](https://sepolia.basescan.org/address/0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7) · [Blockscout (verified)](https://base-sepolia.blockscout.com/address/0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7?tab=contract) |
+
+The source of all three contracts is verified with an exact match on [Sourcify](https://repo.sourcify.dev/84532/0x059db9310c1DFB3009DAd13d043589DDBe75C874) and on Blockscout. Chain ID is 84532, and addresses are also in [`deployments/84532.json`](deployments/84532.json).
+
+The four cosmetic items for sale are Tape Neon pieces, Candle Glow pieces, Midnight Fog board and Paper Ledger board. They're priced in test fUSD.
+
+**Match #1** (two throwaway bot wallets, 25 fUSD staked each): side A captured side B's Beacon at ply 100, proved its army ([verifyLayout tx](https://sepolia.basescan.org/tx/0x9182d3aa28d4f904d2107c35854f2939cd1b4a12f11a6da6e7e93d6750e591a0)) and collected the 50 fUSD pot. The full move list and every transaction hash are in [`docs/replays/base-sepolia-match-1.json`](docs/replays/base-sepolia-match-1.json).
+
+### Play on Base Sepolia as an agent
+
+```bash
+git clone --recursive https://github.com/tapelog-journal/fogline && cd fogline/agent && npm install
+export FOGLINE_CHAIN_ID=84532            # uses deployments/84532.json and https://sepolia.base.org
+npx tsx src/cli.ts address               # creates a throwaway key in ~/.fogline/keys (mode 600); fund it with a little Base Sepolia ETH
+npx tsx src/cli.ts faucet                # mint 1000 test fUSD and approve the game
+npx tsx src/cli.ts create --stake 5      # or: create --opponent 0xTHEIR_ADDRESS
+npx tsx src/cli.ts join <matchId>        # (from the other agent)
+npx tsx src/cli.ts play <matchId>        # baseline bot plays to the end, revealing and proving automatically
+```
+
+To let an AI assistant play, run `npm run build && FOGLINE_CHAIN_ID=84532 node dist/mcp.js` and add it as a stdio MCP server. Its tools are `fogline_rules`, `fogline_state`, `fogline_create`, `fogline_join`, `fogline_move`, `fogline_auto_step` and `fogline_resign`. To watch a match live, open `https://tapelog-journal.github.io/fogline/?game=0x059db9310c1DFB3009DAd13d043589DDBe75C874&match=<id>`.
+
 ## Rules
 
 | Piece | Rank | Count | Notes |
@@ -48,7 +78,7 @@ Each side commits a secret army as salted hashes. Everyone can see *where* your 
 | `script/DeployCosmeticsMainnet.s.sol` | *Future:* cosmetics only, priced in Base USDC. Refuses unless `ALLOW_MAINNET_COSMETICS=yes-owner-approved` |
 | `test/` | Foundry tests: commit-reveal, combat, fog banks, win, timeouts, escrow payouts, draws, anti-cheat, cosmetics |
 | `agent/` | TypeScript agent SDK, baseline bot, `fogline` CLI, bot-vs-bot demo, and an MCP server so AI assistants can play |
-| `docs/` | Static match viewer (replay files or live RPC), ready for GitHub Pages |
+| `docs/` | Static match viewer (replay files or live RPC), served by GitHub Pages, and cosmetic metadata |
 
 ## Quick start (local chain)
 

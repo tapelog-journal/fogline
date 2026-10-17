@@ -23,14 +23,36 @@ export class FoglineClient {
     this.pub = createPublicClient({ chain, transport: http(o.rpcUrl), pollingInterval }) as PublicClient<Transport, Chain>;
     this.wallet = createWalletClient({ chain, transport: http(o.rpcUrl), account: this.account, pollingInterval });
   }
+  /** every transaction this client sent: function name + hash */
+  readonly txs: { fn: string; hash: Hex }[] = [];
   get address(): Address { return this.account.address; }
 
   private async send(functionName: string, args: readonly unknown[], address: Address = this.game, abi: any = foglineAbi) {
-    const { request } = await this.pub.simulateContract({ address, abi, functionName, args, account: this.account } as any);
-    const hash = await this.wallet.writeContract(request as any);
-    const rcpt = await this.pub.waitForTransactionReceipt({ hash });
-    if (rcpt.status !== "success") throw new Error(`${functionName} reverted: ${hash}`);
-    return rcpt;
+    // Public testnet RPCs are load-balanced and can briefly serve stale state
+    // (e.g. an approval or a move that just landed), so retry a few times.
+    const attempts = this.chainId === 31337 ? 1 : 5;
+    for (let i = 1; ; i++) {
+      try {
+        const { request } = await this.pub.simulateContract({ address, abi, functionName, args, account: this.account } as any);
+        const hash = await this.wallet.writeContract(request as any);
+        this.txs.push({ fn: functionName, hash });
+        const rcpt = await this.pub.waitForTransactionReceipt({ hash });
+        if (rcpt.status !== "success") throw new Error(`${functionName} reverted: ${hash}`);
+        if (this.chainId !== 31337) await this.waitForBlock(rcpt.blockNumber);
+        return rcpt;
+      } catch (e) {
+        if (i >= attempts) throw e;
+        await new Promise((r) => setTimeout(r, 2000 * i));
+      }
+    }
+  }
+
+  /** wait until the RPC we read from has caught up to `bn` */
+  private async waitForBlock(bn: bigint) {
+    for (let i = 0; i < 20; i++) {
+      if ((await this.pub.getBlockNumber({ cacheTime: 0 })) >= bn) return;
+      await new Promise((r) => setTimeout(r, 500));
+    }
   }
 
   async faucetAndApprove(token: Address, amount: bigint) {
