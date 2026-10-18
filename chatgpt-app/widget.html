@@ -1,0 +1,292 @@
+<!-- Fogline by TapeLog: in-chat board for ChatGPT (OpenAI Apps SDK / MCP Apps standard).
+     Served by the remote MCP as ui://fogline/board-v1.html (mimeType text/html;profile=mcp-app).
+     Renders the server-drawn board picture (equipped cosmetics, fog of war already applied server-side:
+     hidden enemy ranks never reach this page) with a clickable move layer on top.
+     Talks to the host over the MCP Apps JSON-RPC postMessage bridge, falling back to window.openai.
+     Game for entertainment. Base Sepolia testnet only. Not investment advice. -->
+<div id="fl-root">
+  <div class="fl-top"><span class="fl-brand">FOGLINE</span><span id="fl-title">loading board…</span></div>
+  <div class="fl-boardwrap" id="fl-boardwrap">
+    <img id="fl-img" alt="Fogline board" draggable="false">
+    <div id="fl-grid" class="fl-grid"></div>
+    <div id="fl-busy" class="fl-busy" hidden><div class="fl-spin"></div><div id="fl-busytext">Working…</div></div>
+  </div>
+  <div class="fl-status" id="fl-status"></div>
+  <div class="fl-hint" id="fl-hint"></div>
+  <div class="fl-err" id="fl-err" hidden></div>
+  <ul class="fl-log" id="fl-log"></ul>
+  <div class="fl-actions">
+    <button id="fl-army" hidden>Auto-place my army</button>
+    <button id="fl-new" hidden>New match vs TapeLog bot</button>
+    <button id="fl-refresh">Refresh</button>
+    <button id="fl-watch" class="ghost">Watch / replay</button>
+    <button id="fl-full" class="ghost" hidden>Fullscreen</button>
+  </div>
+  <div class="fl-foot">TapeLog · Game for entertainment. Base Sepolia testnet only. Not investment advice.</div>
+</div>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; background: transparent; }
+  #fl-root { font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Inter, sans-serif; color: #f4f1e8; background: #0b0b0d; border-radius: 14px; padding: 10px; max-width: 640px; margin: 0 auto; box-sizing: border-box; }
+  .fl-top { display: flex; gap: 10px; align-items: baseline; margin: 2px 4px 8px; }
+  .fl-brand { color: #ffd400; font-weight: 800; letter-spacing: 3px; }
+  #fl-title { color: #cfcfcf; font-size: 13px; }
+  .fl-boardwrap { position: relative; width: 100%; aspect-ratio: 800 / 950; border-radius: 10px; overflow: hidden; background: #16130f; user-select: none; }
+  #fl-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .fl-grid { position: absolute; inset: 0; }
+  .fl-sq { position: absolute; width: 10%; height: 8.4211%; box-sizing: border-box; border-radius: 6px; cursor: default; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+  .fl-sq.mov { cursor: pointer; }
+  .fl-sq.mov:hover { box-shadow: inset 0 0 0 2px rgba(255,212,0,.55); }
+  .fl-sq.sel { box-shadow: inset 0 0 0 3px #ffd400, 0 0 14px rgba(255,212,0,.6); background: rgba(255,212,0,.12); }
+  .fl-sq.tgt { cursor: pointer; }
+  .fl-sq.tgt::after { content: ""; width: 26%; height: 26%; border-radius: 50%; background: #ffd400; box-shadow: 0 0 10px #ffd400; opacity: .9; }
+  .fl-sq.tgt.atk::after { width: 78%; height: 78%; background: transparent; border: 3px solid #ff4d3a; box-shadow: 0 0 12px #ff4d3a; box-sizing: border-box; }
+  .fl-sq.tgt:hover { background: rgba(255,212,0,.18); }
+  /* fallback board when the picture cannot load: drawn from the same fog-filtered data */
+  .fl-plain .fl-sq { border-radius: 0; }
+  .fl-plain .fl-sq.d { background-color: #3a3226; } .fl-plain .fl-sq.l { background-color: #5b4d38; }
+  .fl-plain .fl-sq.fog { background: repeating-linear-gradient(45deg,#777 0 4px,#555 4px 8px); }
+  .fl-plain .fl-sq .pc { width: 72%; height: 72%; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .fl-plain .pc.me { background: #ffd400; color: #111; } .fl-plain .pc.op { background: #2b5cff; color: #fff; }
+  .fl-busy { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; font-weight: 600; }
+  .fl-busy[hidden] { display: none; }
+  .fl-spin { width: 34px; height: 34px; border: 4px solid rgba(255,212,0,.25); border-top-color: #ffd400; border-radius: 50%; animation: flspin 0.9s linear infinite; }
+  @keyframes flspin { to { transform: rotate(360deg); } }
+  .fl-status { margin: 10px 4px 2px; font-weight: 700; }
+  .fl-status.turn { color: #ffd400; }
+  .fl-hint { margin: 0 4px; color: #bdbdbd; font-size: 13px; min-height: 18px; }
+  .fl-err { margin: 8px 4px; padding: 8px 10px; border-radius: 8px; background: #3a1210; color: #ffb4a8; font-size: 13px; }
+  .fl-log { margin: 6px 4px; padding-left: 18px; color: #d9d2c0; font-size: 13px; }
+  .fl-log:empty { display: none; }
+  .fl-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 4px 6px; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 999px; padding: 7px 14px; background: #ffd400; color: #111; cursor: pointer; }
+  button.ghost { background: transparent; color: #f4f1e8; box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); }
+  button:disabled { opacity: .5; cursor: default; }
+  button[hidden] { display: none; }
+  .fl-foot { margin: 6px 4px 0; color: #8f8f8f; font-size: 11.5px; }
+</style>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const FILES = "abcdefgh";
+  const FOG = new Set([26, 37]); // c4, f5: fog banks (impassable)
+  const coord = (sq) => FILES[sq % 8] + (Math.floor(sq / 8) + 1);
+  const CODE = ["B", "1", "2", "3", "4", "5", "6", "7", "M"];
+  const RANKS = ["Beacon", "Ghost", "Scout", "Sapper", "Guard", "Knight", "Captain", "Warden", "Mine"];
+
+  const st = { session: null, data: null, img: null, sel: null, busy: false, bridge: false, polls: 0 };
+
+  // ---------------------------------------------------------------- host bridge (MCP Apps JSON-RPC over postMessage)
+  let nextId = 1; const pending = new Map();
+  function rpc(method, params, timeoutMs) {
+    const id = nextId++;
+    window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      if (timeoutMs) setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error("timeout")); } }, timeoutMs);
+    });
+  }
+  const notify = (method, params) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+  window.addEventListener("message", (ev) => {
+    if (ev.source !== window.parent) return;
+    const m = ev.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id !== undefined && pending.has(m.id) && !m.method) {
+      const p = pending.get(m.id); pending.delete(m.id);
+      m.error ? p.reject(new Error(m.error.message || "host error")) : p.resolve(m.result);
+      return;
+    }
+    if (m.method === "ui/notifications/tool-input") onInput(m.params && m.params.arguments);
+    else if (m.method === "ui/notifications/tool-result") onResult(m.params);
+    else if (m.method === "ui/resource-teardown" && m.id !== undefined) window.parent.postMessage({ jsonrpc: "2.0", id: m.id, result: {} }, "*");
+  }, { passive: true });
+
+  const oa = () => (typeof window !== "undefined" ? window.openai : undefined);
+
+  async function callTool(name, args) {
+    if (st.bridge) return rpc("tools/call", { name, arguments: args });
+    const o = oa();
+    if (o && o.callTool) return o.callTool(name, args);
+    throw new Error("This chat app cannot run Fogline tools from the board. Ask the assistant to make the move instead.");
+  }
+  function tellModel(text) {
+    try {
+      if (st.bridge) rpc("ui/update-model-context", { content: [{ type: "text", text }] }).catch(() => {});
+      const o = oa(); if (o && o.setWidgetState) o.setWidgetState({ modelContent: text, privateContent: { session: st.session, matchId: st.data && st.data.matchId } });
+    } catch (e) {}
+  }
+  function openLink(url) {
+    if (!url) return;
+    if (st.bridge) return rpc("ui/open-link", { url }).catch(() => { const o = oa(); o && o.openExternal ? o.openExternal({ href: url }) : window.open(url, "_blank"); });
+    const o = oa(); if (o && o.openExternal) return o.openExternal({ href: url });
+    window.open(url, "_blank", "noopener");
+  }
+
+  // ---------------------------------------------------------------- data in
+  function onInput(args) {
+    if (args && typeof args.session === "string" && /^fl_[0-9a-f]{32}$/.test(args.session)) st.session = args.session;
+  }
+  function onResult(res) {
+    if (!res) return;
+    const sc = res.structuredContent;
+    if (res.isError || !sc || !sc.matchId) {
+      const t = (res.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n").replace(/\n+Game for entertainment.*$/s, "");
+      showErr(t || "The tool returned an error.");
+      return;
+    }
+    hideErr();
+    const meta = res._meta || {};
+    st.data = sc; st.sel = null;
+    if (sc.session && !st.session) st.session = sc.session;
+    st.img = meta["fogline/boardPng"] || sc.board_image_url || null;
+    render();
+    maybePoll();
+  }
+
+  // ---------------------------------------------------------------- drawing
+  function cellPos(sq, flip) {
+    const r = Math.floor(sq / 8), c = sq % 8;
+    const col = flip ? 7 - c : c, row = flip ? r : 7 - r;
+    return { left: 10 + col * 10, top: (160 + row * 80) / 950 * 100 };
+  }
+  function render() {
+    const d = st.data; if (!d) return;
+    const flip = d.yourSide === "B";
+    const spect = d.yourSide !== "A" && d.yourSide !== "B";
+    $("fl-title").textContent = `Match #${d.matchId} · ply ${d.ply} · ` + (spect ? "spectator view" : `you are side ${d.yourSide}`);
+    const img = $("fl-img"), wrap = $("fl-boardwrap");
+    if (st.img && img.getAttribute("src") !== st.img) {
+      img.hidden = false; wrap.classList.remove("fl-plain");
+      img.onerror = () => { img.hidden = true; wrap.classList.add("fl-plain"); drawGrid(); };
+      img.src = st.img;
+    } else if (!st.img) { img.hidden = true; wrap.classList.add("fl-plain"); }
+    drawGrid();
+    const s = $("fl-status");
+    s.textContent = d.yourTurn ? "Your turn: tap one of your pieces, then a highlighted square." : spect ? `Spectator view · ${d.phase}` : cap(d.status || d.phase);
+    s.classList.toggle("turn", !!d.yourTurn);
+    const log = $("fl-log"); log.innerHTML = "";
+    for (const line of [].concat(d.lastTurn || [], d.events || []).slice(-6)) { const li = document.createElement("li"); li.textContent = line; log.appendChild(li); }
+    $("fl-army").hidden = !d.canPlaceArmy;
+    $("fl-new").hidden = !(d.phase === "Ended" || d.phase === "Settled");
+    hint();
+  }
+  const cap = (t) => String(t || "").charAt(0).toUpperCase() + String(t || "").slice(1);
+  function hint() {
+    const d = st.data, h = $("fl-hint");
+    if (!d) return;
+    if (st.sel !== null) {
+      const tos = d.legalMoves.filter((m) => m.from === st.sel);
+      const p = tos[0] && tos[0].piece;
+      h.textContent = `${p || "Piece"} on ${coord(st.sel)} → ${tos.map((m) => coord(m.to) + (m.attack ? " (attack)" : "")).join(", ")}. Tap again to cancel.`;
+    } else if (d.yourTurn) h.textContent = `${d.legalMoves.length} legal moves. Enemy ranks stay hidden until a fight reveals them.`;
+    else h.textContent = "";
+  }
+  function drawGrid() {
+    const d = st.data, g = $("fl-grid"); if (!d) return;
+    const flip = d.yourSide === "B", plain = $("fl-boardwrap").classList.contains("fl-plain");
+    const movers = new Set(d.yourTurn && !st.busy ? d.legalMoves.map((m) => m.from) : []);
+    const tgts = new Map(st.sel !== null ? d.legalMoves.filter((m) => m.from === st.sel).map((m) => [m.to, m.attack]) : []);
+    const occ = new Map();
+    for (const p of d.yourPieces || []) occ.set(p.square, { me: true, rank: p.rank });
+    for (const p of d.enemyPieces || []) occ.set(p.square, { me: false, rank: p.rank });
+    g.innerHTML = "";
+    for (let sq = 0; sq < 64; sq++) {
+      const el = document.createElement("div"), pos = cellPos(sq, flip), r = Math.floor(sq / 8), c = sq % 8;
+      el.className = "fl-sq" + (movers.has(sq) ? " mov" : "") + (st.sel === sq ? " sel" : "") + (tgts.has(sq) ? " tgt" + (tgts.get(sq) ? " atk" : "") : "");
+      if (plain) {
+        el.className += FOG.has(sq) ? " fog" : (r + c) % 2 ? " l" : " d";
+        const o = occ.get(sq);
+        if (o) { const pc = document.createElement("div"); pc.className = "pc " + (o.me ? "me" : "op"); const i = RANKS.indexOf(o.rank); pc.textContent = i >= 0 ? CODE[i] : "?"; el.appendChild(pc); }
+      }
+      el.style.left = pos.left + "%"; el.style.top = pos.top + "%";
+      el.title = coord(sq);
+      el.dataset.sq = String(sq);
+      g.appendChild(el);
+    }
+  }
+  $("fl-grid").addEventListener("click", (ev) => {
+    const el = ev.target.closest(".fl-sq"); if (!el || st.busy) return;
+    const sq = Number(el.dataset.sq), d = st.data; if (!d || !d.yourTurn) return;
+    if (st.sel !== null && d.legalMoves.some((m) => m.from === st.sel && m.to === sq)) return move(st.sel, sq);
+    st.sel = st.sel === sq || !d.legalMoves.some((m) => m.from === sq) ? null : sq;
+    drawGrid(); hint();
+  });
+
+  // ---------------------------------------------------------------- actions
+  function busy(on, text) {
+    st.busy = on; $("fl-busy").hidden = !on; $("fl-busytext").textContent = text || "Working…";
+    for (const b of document.querySelectorAll("button")) b.disabled = on;
+    drawGrid();
+  }
+  function showErr(t) { const e = $("fl-err"); e.textContent = t; e.hidden = false; }
+  function hideErr() { $("fl-err").hidden = true; }
+  function needSession() { if (!st.session) throw new Error("Missing player session. Ask the assistant to show the Fogline board again."); }
+
+  async function run(label, name, args, after) {
+    try {
+      needSession(); hideErr(); busy(true, label);
+      const res = await callTool(name, args);
+      busy(false);
+      onResult(res);
+      if (after && res && !res.isError) after(res);
+      return res;
+    } catch (e) { busy(false); showErr(String((e && e.message) || e)); }
+  }
+  function move(from, to) {
+    const d = st.data;
+    const p = d.legalMoves.find((m) => m.from === from && m.to === to);
+    run(`Moving ${coord(from)} → ${coord(to)}… waiting for the opponent`, "fogline_move", { session: st.session, matchId: Number(d.matchId), from: coord(from), to: coord(to) }, (res) => {
+      const sc = res.structuredContent || {};
+      tellModel(`The user moved ${p && p.piece ? p.piece + " " : ""}${coord(from)} → ${coord(to)} on the Fogline board (match #${d.matchId}). Now: ${sc.summary || sc.status || ""}. ${(sc.lastTurn || []).join(" ")}`.trim());
+    });
+  }
+  function maybePoll() {
+    const d = st.data;
+    if (!d || st.busy || !st.session) return;
+    const waiting = (d.phase === "Playing" || d.phase === "PendingReveal" || d.phase === "Committing") && !d.yourTurn && !d.canPlaceArmy;
+    if (!waiting) { st.polls = 0; return; }
+    if (st.polls++ > 20) return;
+    setTimeout(() => { if (!st.busy && st.data === d) run("Waiting for the opponent…", "fogline_state", { session: st.session, matchId: Number(d.matchId) }); }, 4000);
+  }
+  $("fl-refresh").onclick = () => st.data && run("Refreshing…", "fogline_state", { session: st.session, matchId: Number(st.data.matchId) });
+  $("fl-army").onclick = () => st.data && run("Placing your secret army onchain…", "fogline_auto_army", { session: st.session, matchId: Number(st.data.matchId) }, () => tellModel(`The user placed their army from the Fogline board (match #${st.data.matchId}).`));
+  $("fl-watch").onclick = () => st.data && openLink(st.data.watch);
+  $("fl-new").onclick = async () => {
+    try {
+      needSession(); hideErr(); busy(true, "Starting a new match vs the TapeLog bot…");
+      const r = await callTool("fogline_play_bot", { session: st.session });
+      const id = r && r.structuredContent && r.structuredContent.matchId;
+      if (!id) throw new Error(((r && r.content) || []).map((c) => c.text || "").join(" ").slice(0, 300) || "could not start a match");
+      busy(false);
+      await run("Placing your secret army onchain…", "fogline_auto_army", { session: st.session, matchId: Number(id) }, () => tellModel(`The user started Fogline match #${id} vs the TapeLog bot from the board.`));
+    } catch (e) { busy(false); showErr(String((e && e.message) || e)); }
+  };
+
+  // ---------------------------------------------------------------- startup
+  async function start() {
+    try {
+      await rpc("ui/initialize", { appInfo: { name: "Fogline by TapeLog", version: "1.0.0" }, appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] }, protocolVersion: "2026-01-26" }, 2500);
+      st.bridge = true;
+      notify("ui/notifications/initialized", {});
+      const full = $("fl-full"); full.hidden = false;
+      full.onclick = () => rpc("ui/request-display-mode", { mode: "fullscreen" }).catch(() => { const o = oa(); o && o.requestDisplayMode && o.requestDisplayMode({ mode: "fullscreen" }); });
+    } catch (e) { st.bridge = false; }
+    // ChatGPT compatibility globals (also present in hosts that never answer ui/initialize)
+    const o = oa();
+    if (o) {
+      if (o.toolInput) onInput(o.toolInput);
+      if (o.widgetState && o.widgetState.privateContent && o.widgetState.privateContent.session) st.session = st.session || o.widgetState.privateContent.session;
+      if (!st.data && o.toolOutput) onResult({ structuredContent: o.toolOutput, _meta: o.toolResponseMetadata || {} });
+      window.addEventListener("openai:set_globals", (ev) => {
+        const g = (ev && ev.detail && ev.detail.globals) || {};
+        if (g.toolInput) onInput(g.toolInput);
+        if (g.toolOutput && !st.busy) onResult({ structuredContent: g.toolOutput, _meta: g.toolResponseMetadata || (oa() && oa().toolResponseMetadata) || {} });
+      }, { passive: true });
+    }
+    // report size so the host can fit the iframe
+    try { new ResizeObserver(() => { if (st.bridge) notify("ui/notifications/size-changed", { width: document.body.scrollWidth, height: document.body.scrollHeight }); }).observe(document.body); } catch (e) {}
+  }
+  start();
+})();
+</script>

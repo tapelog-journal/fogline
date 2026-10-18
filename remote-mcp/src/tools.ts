@@ -12,11 +12,12 @@ import { boardImageUrl, boardPageUrl } from "./boardimg";
 import { renderer } from "./env";
 import { b64 } from "./png";
 import { ITEMS } from "./cosmetics";
+import { appCallableMeta, boardStructured, boardToolMeta, registerWidget } from "./app";
 
 export const VERSION = "0.2.0";
 export const PUBLIC_ORIGIN = "https://fogline-mcp.tapelog.workers.dev";
 
-export const INSTRUCTIONS = `Fogline is a hidden-army strategy game on Base Sepolia TESTNET (no real money). To play: 1) fogline_new_player once and remember the session it returns (pass it to every later call). 2) fogline_play_bot to start a match vs the TapeLog house bot (or fogline_create/fogline_join vs a friend). 3) fogline_auto_army (or fogline_set_army). 4) Loop: fogline_move with a from/to pair from legalMoves; the bot replies automatically and the result includes the new board as a picture (an image block plus a board_image_url: show it to the user each turn as a markdown image, falling back to the text board only if images can't be shown). Use fogline_state to look again. Optional: fogline_cosmetics / fogline_buy_cosmetic for decorative skins and tabletops (test fUSD). Share the watch link. ${DISCLAIMER}`;
+export const INSTRUCTIONS = `Fogline is a hidden-army strategy game on Base Sepolia TESTNET (no real money). To play: 1) fogline_new_player once and remember the session it returns (pass it to every later call). 2) fogline_play_bot to start a match vs the TapeLog house bot (or fogline_create/fogline_join vs a friend). 3) fogline_auto_army (or fogline_set_army). 4) Loop: fogline_move with a from/to pair from legalMoves; the bot replies automatically and the result includes the new board as a picture (an image block plus a board_image_url: show it to the user each turn as a markdown image, falling back to the text board only if images can't be shown). Use fogline_state to look again. In ChatGPT these board tools also show an interactive board widget (the user can tap a piece, then a square, to move; widget moves are reported back to you), so when the widget is shown keep your reply short and do not redraw the board. Optional: fogline_cosmetics / fogline_buy_cosmetic for decorative skins and tabletops (test fUSD). Share the watch link. ${DISCLAIMER}`;
 
 export const RULES = `FOGLINE RULES (an original TapeLog game)
 Board: 8x8. Squares are named like chess: files a-h (left to right) and ranks 1-8 (rank 1 is side A's home edge), e.g. c2. Squares c4 and f5 are fog banks: nobody can enter or pass them.
@@ -54,13 +55,17 @@ export function fmtPlay(r: any, origin = PUBLIC_ORIGIN) {
 /** Tool result for a board: markdown text (with image link) + the PNG itself as an MCP image block. */
 async function boardResult(env: Env, r: any, prefix: string, origin: string) {
   const content: any[] = [{ type: "text" as const, text: `${prefix}${fmtPlay(r, origin)}\n\n${DISCLAIMER}` }];
+  const img = boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken), page = boardPageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
+  const _meta: Record<string, unknown> = {};
   try {
     if (r.scene) {
       const pic = await renderer(env, r.matchId).png({ scene: r.scene, players: r.players, block: r.block });
-      content.push({ type: "image" as const, data: b64(pic.png), mimeType: "image/png" });
+      const data = b64(pic.png);
+      content.push({ type: "image" as const, data, mimeType: "image/png" });
+      _meta["fogline/boardPng"] = `data:image/png;base64,${data}`; // for the ChatGPT board widget (hidden from the model)
     }
   } catch (e) { console.log("inline board image failed", String(e).slice(0, 160)); }
-  return { content };
+  return { content, structuredContent: boardStructured(r, img, page), _meta };
 }
 
 const DOCS: Record<string, { title: string; text: () => string; url: string }> = {
@@ -74,6 +79,7 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   const player = (session: string): any => env.PLAYER.get(env.PLAYER.idFromName(session));
   const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
   const WR = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
+  registerWidget(server, origin);
 
   server.registerTool("fogline_rules", {
     title: "Fogline rules", description: "Use this first if the user wants to play Fogline or asks how it works: returns the full rules, piece set, square numbering and strategy tips.",
@@ -108,12 +114,12 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   server.registerTool("fogline_play_bot", {
     title: "Play the TapeLog bot",
     description: "Use this when the user wants to play against the computer. Creates a match against the TapeLog house bot, which joins and plays automatically. You are side A and move first after both armies are placed. Next call fogline_auto_army (or fogline_set_army).",
-    inputSchema: { session: sessionArg, stake: stakeArg, turnTimeoutSeconds: timeoutArg, chainId: chainArg }, annotations: WR,
+    inputSchema: { session: sessionArg, stake: stakeArg, turnTimeoutSeconds: timeoutArg, chainId: chainArg }, annotations: WR, _meta: appCallableMeta,
   }, async ({ session, stake, turnTimeoutSeconds, chainId }) => {
     try {
       checkChain(chainId);
       const r = await player(session).playBot(String(BigInt(Math.round((stake ?? 0) * 1e6))), turnTimeoutSeconds);
-      return text(`Match #${r.matchId} created vs the TapeLog house bot${stake ? ` (stake ${stake} test fUSD)` : ""}. ${r.joined ? "The bot has joined." : "The bot is joining now."}\nNext: fogline_auto_army with matchId ${r.matchId}.\n\nOnchain transactions:\n${r.txs.map((t: any) => `- ${t.fn}: ${t.url}`).join("\n")}\n\nWatch live: ${r.watch}`);
+      return { ...text(`Match #${r.matchId} created vs the TapeLog house bot${stake ? ` (stake ${stake} test fUSD)` : ""}. ${r.joined ? "The bot has joined." : "The bot is joining now."}\nNext: fogline_auto_army with matchId ${r.matchId}.\n\nOnchain transactions:\n${r.txs.map((t: any) => `- ${t.fn}: ${t.url}`).join("\n")}\n\nWatch live: ${r.watch}`), structuredContent: { matchId: String(r.matchId), joined: !!r.joined, watch: r.watch } };
     } catch (e) { return err(e); }
   });
 
@@ -143,7 +149,7 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
 
   server.registerTool("fogline_auto_army", {
     title: "Auto-place army", description: "Use this right after a match starts to place a sensible random secret army (Beacon on the back row guarded by Mines). Waits briefly for the opponent and returns the board.",
-    inputSchema: { session: sessionArg, matchId: matchArg }, annotations: WR,
+    inputSchema: { session: sessionArg, matchId: matchArg }, annotations: WR, _meta: boardToolMeta("Placing your secret army…", "Army placed"),
   }, async ({ session, matchId }) => {
     try { return await boardResult(env, await player(session).commitArmy(String(matchId)), "Army placed (hidden onchain as hashes).\n\n", origin); } catch (e) { return err(e); }
   });
@@ -151,7 +157,7 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   server.registerTool("fogline_set_army", {
     title: "Place a custom army",
     description: "Use this instead of fogline_auto_army when the user wants to choose the layout. Give exactly 16 rank names in order of your starting squares (side A: a1..h1 then a2..h2; side B: a7..h7 then a8..h8). Must contain exactly: 1 Beacon, 1 Ghost, 3 Scout, 2 Sapper, 3 Guard, 2 Knight, 1 Captain, 1 Warden, 2 Mine.",
-    inputSchema: { session: sessionArg, matchId: matchArg, ranks: z.array(RANK).length(16).describe("16 rank names in starting-square order.") }, annotations: WR,
+    inputSchema: { session: sessionArg, matchId: matchArg, ranks: z.array(RANK).length(16).describe("16 rank names in starting-square order.") }, annotations: WR, _meta: boardToolMeta("Placing your army…", "Army placed"),
   }, async ({ session, matchId, ranks }) => {
     try { return await boardResult(env, await player(session).commitArmy(String(matchId), ranks.map((r) => RANK_IDX[r])), "Custom army placed (hidden onchain as hashes).\n\n", origin); } catch (e) { return err(e); }
   });
@@ -160,7 +166,7 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
     title: "Make a move",
     description: "Use this on your turn. Moves your piece from square `from` to square `to`, written like b2 and b3 (pick from the listed moves). Moving onto an enemy piece attacks it. Reveals are handled automatically. When playing the house bot, this waits for the bot's reply and returns what happened plus the new board and your next legal moves.",
     inputSchema: { session: sessionArg, matchId: matchArg, from: z.union([z.string(), z.number()]).describe("Square of your piece, e.g. \"b2\" (numeric 0-63 also accepted)."), to: z.union([z.string(), z.number()]).describe("Destination square, e.g. \"b3\".") },
-    annotations: WR,
+    annotations: WR, _meta: boardToolMeta("Moving… waiting for the reply", "Board updated"),
   }, async ({ session, matchId, from, to }) => {
     try {
       const f = parseSquare(from), t = parseSquare(to);
@@ -172,14 +178,14 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   server.registerTool("fogline_state", {
     title: "Show the board",
     description: "Use this to see a match from the player's point of view: your pieces with ranks, enemy pieces as hidden unless revealed, whose turn it is, the turn timer, your legal moves and a watch link. Read-only.",
-    inputSchema: { session: sessionArg, matchId: matchArg }, annotations: RO,
+    inputSchema: { session: sessionArg, matchId: matchArg }, annotations: RO, _meta: boardToolMeta("Loading the board…", "Board ready"),
   }, async ({ session, matchId }) => {
     try { return await boardResult(env, await player(session).state(String(matchId)), "", origin); } catch (e) { return err(e); }
   });
 
   server.registerTool("fogline_resign", {
     title: "Resign", description: "Use this only when the user explicitly wants to give up the match. The opponent wins (and any test-token stake).",
-    inputSchema: { session: sessionArg, matchId: matchArg }, annotations: { ...WR, destructiveHint: true },
+    inputSchema: { session: sessionArg, matchId: matchArg }, annotations: { ...WR, destructiveHint: true }, _meta: boardToolMeta("Resigning…", "Resigned"),
   }, async ({ session, matchId }) => {
     try { return await boardResult(env, await player(session).resign(String(matchId)), "You resigned.\n\n", origin); } catch (e) { return err(e); }
   });

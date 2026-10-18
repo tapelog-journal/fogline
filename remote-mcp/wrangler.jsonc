@@ -6,7 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "rules": [
-    { "type": "Text", "globs": ["**/*.md", "**/*.txt"], "fallthrough": true },
+    { "type": "Text", "globs": ["**/*.md", "**/*.txt", "**/*.html"], "fallthrough": true },
     { "type": "Data", "globs": ["**/*.ttf"], "fallthrough": true },
     { "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }
   ],
