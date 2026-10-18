@@ -45,7 +45,8 @@ export function findHighlights(h: History): Highlight[] {
   const endIdx = h.snapshots.findIndex((s) => Number(s.state.match.phase) >= Phase.Ended && Number(s.state.match.winner) < 2);
   if (endIdx >= 0 && !out.some((x) => x.kind === "win")) {
     const s = h.snapshots[endIdx], w = Number(s.state.match.winner), reason = Number(s.state.match.reason);
-    const why = ["", "Beacon captured", "opponent resigned", "opponent's timer ran out", "", "", "", "illegal reveal", "winner unverified"][reason] ?? "";
+    const L = SIDE(1 - w);
+    const why = ["", `${L}'s Beacon was captured`, `${L} resigned`, `${L}'s turn timer ran out`, "", "", "", `${L} made an illegal reveal`, `${L}'s army could not be verified`][reason] || "Match over";
     out.push({ step: s.step, ply: Number(s.state.match.ply), kind: "win", title: `${SIDE(w)} wins`, detail: why, side: w });
   }
   return out;

@@ -112,7 +112,7 @@ export class Renderer extends DurableObject<Env> {
     for (const x of items) { x.title = named(x.title, nm); x.detail = named(x.detail, nm); }
     const hl = which === "win" ? items.find((x) => x.kind === "win") : which === "last" ? items[items.length - 1] : items.find((x) => String(x.step) === which);
     if (!hl) return undefined;
-    const k = `clip:v2:${matchId}:${hl.step}`;
+    const k = `clip:v3:${matchId}:${hl.step}`;
     const cached = await this.ctx.storage.get<{ meta: any; gif: Uint8Array; card: Uint8Array }>(k);
     if (cached) return cached;
     const names = await this.clipNames(h.players);

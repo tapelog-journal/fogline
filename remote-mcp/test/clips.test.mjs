@@ -26,7 +26,7 @@ test("captures, ambush, mine blast and resign win are highlights; a failed attac
   const h = C.findHighlights(hist);
   assert.deepEqual(h.map((x) => [x.step, x.kind]), [[4, "capture"], [6, "ambush"], [7, "mine"], [8, "win"]]);
   assert.match(h[3].title, /Side B wins/);
-  assert.match(h[3].detail, /resigned/);
+  assert.equal(h[3].detail, "Side A resigned");
 });
 test("a clip covers the moves leading up to the moment", () => {
   assert.deepEqual(C.clipSteps(hist, 6, 3).map((s) => s.step), [3, 4, 5, 6]);
