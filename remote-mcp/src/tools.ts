@@ -10,7 +10,8 @@ import { boardView, boardMd, LEGEND, MD_LEGEND, parseSquare, summary } from "./v
 import { mdPage } from "./md";
 import { boardImageUrl, boardPageUrl } from "./boardimg";
 import { checkName } from "./api";
-import { ladder } from "./env";
+import { ladder, tourney } from "./env";
+import { publicView } from "./tourney";
 import { renderer } from "./env";
 import { b64 } from "./png";
 import { ITEMS } from "./cosmetics";
@@ -201,6 +202,35 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
       const t = await ladder(env).top(20);
       const rows = t.players.map((e: any, i: number) => `${i + 1}. ${e.name ?? e.address.slice(0, 6) + "…" + e.address.slice(-4)} · ${e.rating} · ${e.w}-${e.l}-${e.d} · ${e.client}`);
       return text(`Fogline ladder (Elo, start 1200; client kind is self-reported):\n${rows.join("\n") || "no rated matches yet"}\n\nPage: https://tapelog-journal.github.io/fogline/ladder.html`);
+    } catch (e) { return err(e); }
+  });
+
+  server.registerTool("fogline_tournament", {
+    title: "Show the Fogline weekly tournament",
+    description: "Use this when the user asks about tournaments, brackets or the weekly cup. Shows this week's single-elimination tournament (sign-up status, start time, bracket, results) and, with a session, the player's own current tournament match. Prizes are decorative cosmetics and valueless test fUSD only.",
+    inputSchema: { session: sessionArg.optional() }, annotations: RO,
+  }, async ({ session }) => {
+    try {
+      const you = session ? (await player(session).profile()).address : undefined;
+      const o = await (tourney(env) as any).overview();
+      const v = publicView(o.tournament, env, you);
+      const lines = v.rounds.map((r: any) => `${r.name}: ` + r.matches.map((m: any) => `${m.a ?? "bye"} vs ${m.b ?? "bye"}${m.winner ? ` → ${m.winner}` : m.matchId ? ` (match #${m.matchId})` : ""}`).join("; "));
+      return { ...text(`${v.name} · ${v.status} · starts ${v.startsAt} (UTC) · ${v.signedUp}/${v.maxPlayers} signed up · ${Math.round(v.turnTimeoutSeconds / 60)} min per turn\nPrizes: ${v.prizes.map((x: any) => `#${x.place} ${x.cosmetic} + ${x.testFusd} test fUSD`).join(", ")} (test tokens and cosmetics only)\n${lines.join("\n")}${v.you ? `\nYou: ${v.you.match ? `play match #${v.you.match.matchId} (${v.you.match.a} vs ${v.you.match.b}); use fogline_auto_army / fogline_move with that matchId` : v.you.signedUp ? "signed up" : "not signed up (fogline_tournament_signup)"}` : ""}\nBracket: https://tapelog-journal.github.io/fogline/tournament.html`), structuredContent: v };
+    } catch (e) { return err(e); }
+  });
+
+  server.registerTool("fogline_tournament_signup", {
+    title: "Sign up for the Fogline weekly tournament",
+    description: "Use this when the user wants to enter this week's tournament. Signs the player up (optional public handle). When the bracket starts the server creates the player's match; find it with fogline_tournament, then place the army and move as usual. Free; prizes are cosmetics and test fUSD only.",
+    inputSchema: { session: sessionArg, name: z.string().max(24).optional().describe("Optional public handle the user chose (2-24 letters, digits, spaces, _ . -).") },
+    annotations: WR,
+  }, async ({ session, name }) => {
+    try {
+      const pl = player(session);
+      await pl.setProfile(name === undefined ? undefined : checkName(name), "mcp");
+      const r = await (tourney(env) as any).signup(await pl.tourneyIdentity());
+      const v = publicView(r.tournament, env);
+      return text(`${r.already ? "Already signed up for" : "Signed up for"} ${v.name}, starting ${v.startsAt} (UTC). ${v.signedUp} player(s) so far; TapeLog bots fill the bracket. Check fogline_tournament for your match once it starts.`);
     } catch (e) { return err(e); }
   });
 

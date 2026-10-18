@@ -76,6 +76,11 @@ export class Player extends DurableObject<Env> {
     try { await ladder(this.env).register(address, next.name ?? "", next.client); } catch (e) { console.log("ladder register failed", String(e).slice(0, 120)); }
     return { address, ...next };
   }
+  /** What a tournament needs to know about this player (no secrets: the object id lets the server drive this player's own matches). */
+  async tourneyIdentity() {
+    const pr = (await this.ctx.storage.get<{ name?: string; client?: string }>("profile")) ?? {};
+    return { address: await this.address(), objectId: this.ctx.id.toString(), name: pr.name, client: pr.client ?? "api" };
+  }
   async profile() { return { address: await this.address(), ...((await this.ctx.storage.get<{ name?: string; client?: string }>("profile")) ?? {}) }; }
 
   async info() {

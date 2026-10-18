@@ -5,7 +5,7 @@ import { watchLink } from "./env";
 // Base Sepolia testnet only. Game for entertainment. Testnet only. Not investment advice.
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { buildServer, houseAddress, VERSION } from "./tools";
-import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, type Env } from "./env";
+import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, tourney, type Env } from "./env";
 import { handleApi, ROBOTS } from "./api";
 import { handleShopPreview } from "./shop";
 import { chatgptPrompt, handleAliasImage, handleBoardImage, handleBoardPage } from "./boardimg";
@@ -20,6 +20,7 @@ export { Funder } from "./funder";
 export { SseSession } from "./sse";
 export { Renderer } from "./renderer";
 export { Ladder } from "./ladder";
+export { Tourney } from "./tourney";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -51,6 +52,13 @@ export default {
       catch (e: any) { return new Response(JSON.stringify({ ok: false, error: String(e?.message ?? e).slice(0, 200) }), { status: 200, headers: H }); }
     }
     if (url.pathname === "/api/shop/preview.png") return handleShopPreview(req, env);
+    if (url.pathname === "/admin/practice-tournament" && req.method === "POST") {
+      // operator-only: needs the ADMIN_TOKEN secret (never in a URL)
+      const tok = req.headers.get("x-admin-token") ?? "";
+      if (!env.ADMIN_TOKEN || tok.length < 32 || tok !== env.ADMIN_TOKEN) return new Response("forbidden", { status: 403 });
+      const spec = await req.json().catch(() => ({}));
+      return Response.json(await (tourney(env) as any).createPractice(spec));
+    }
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return handleApi(req, env, ip, ctx);
     if (url.pathname === "/skill.md" || url.pathname === "/SKILL.md") return new Response(SKILL as string, { headers: { "content-type": "text/markdown; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
     if (url.pathname === "/llms.txt") return new Response(LLMS as string, { headers: { "content-type": "text/plain; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });

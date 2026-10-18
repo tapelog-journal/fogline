@@ -8,6 +8,7 @@ export interface Env {
   SSE: DurableObjectNamespace<import("./sse").SseSession>;
   RENDER: DurableObjectNamespace<import("./renderer").Renderer>;
   LADDER: DurableObjectNamespace<import("./ladder").Ladder>;
+  TOURNEY: DurableObjectNamespace<import("./tourney").Tourney>;
   CHAIN_ID: string;
   RPC_URL: string;
   /** comma-separated fallback RPCs */
@@ -20,6 +21,8 @@ export interface Env {
   FUNDER_KEY: string;
   HOUSE_KEY: string;
   IP_SALT: string;
+  /** operator-only token for creating practice tournaments (optional secret) */
+  ADMIN_TOKEN?: string;
 }
 
 export const ALLOWED_CHAIN_ID = 84532;
@@ -58,3 +61,4 @@ export const DEFAULT_TURN_TIMEOUT = 600; // seconds per turn (contract min 60)
 export const renderer = (env: Env, matchId: string | bigint) => env.RENDER.get(env.RENDER.idFromName(`render-${BigInt(matchId) % 8n}`));
 export const DEFAULT_LOOK_PAIR = (): [import("./render").Look, import("./render").Look] => [0, 1].map(() => ({ skin: 0, table: 0, fog: 0, trail: 0, banner: 0, fx: [] })) as any;
 export const ladder = (env: Env) => env.LADDER.get(env.LADDER.idFromName("ladder"));
+export const tourney = (env: Env) => env.TOURNEY.get(env.TOURNEY.idFromName("tourney"));

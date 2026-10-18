@@ -8,7 +8,8 @@ import { commitments, type Layout } from "../../agent/src/layout";
 import { Phase, PIECES } from "../../agent/src/rules";
 import { gameCall, pub, readState, sendTx, tokenCall } from "./chain";
 import { cfg, ladder, MAX_HOUSE_MATCHES, type Env } from "./env";
-import { nonceStore } from "./store";
+import { Mutex, nonceStore } from "./store";
+import { cosmeticsCall } from "./cosmetics";
 
 interface HouseMatch { session?: string; level?: Level; layout?: Layout; added: number; log: string[]; minBlock?: string }
 
@@ -49,11 +50,35 @@ export class House extends DurableObject<Env> {
   async levelOf(id: string): Promise<Level | undefined> { return (await this.all())[id]?.level; }
 
   private cur?: HouseMatch;
+  private txLock = new Mutex();
   private async tx(fn: string, data: Hex, to?: Address) {
     const c = cfg(this.env);
-    const r = await sendTx({ rpc: c.rpcUrl, key: this.env.HOUSE_KEY as Hex, to: to ?? c.game, data, fn, nonces: nonceStore(this.ctx.storage), attempts: 2 });
+    const r = await this.txLock.run(() => sendTx({ rpc: c.rpcUrl, key: this.env.HOUSE_KEY as Hex, to: to ?? c.game, data, fn, nonces: nonceStore(this.ctx.storage), attempts: 2 }));
     if (this.cur) this.cur.minBlock = r.receipt.blockNumber.toString();
     return r;
+  }
+
+  /** Tournament housekeeping: anyone may claim an expired timer onchain; the house pays the (testnet) gas. */
+  async claim(id: string, fn: "claimTimeout" | "claimUnverified") {
+    const r = await this.tx(fn, gameCall(fn, [BigInt(id)]));
+    return r.hash;
+  }
+
+  /** Tournament prize: one decorative cosmetic (bought with valueless test fUSD, then transferred) plus test fUSD. Never real money. */
+  async givePrize(to: Address, itemId: number, itemPrice: number, fusd: number): Promise<string[]> {
+    const c = cfg(this.env), p = pub(c.rpcUrl), me = this.address, out: string[] = [];
+    const { mockUsdcAbi } = await import("./chain");
+    const need = BigInt(itemPrice + fusd) * 1_000_000n;
+    const bal = (await p.readContract({ address: c.token, abi: mockUsdcAbi, functionName: "balanceOf", args: [me] })) as bigint;
+    if (bal < need) out.push((await this.tx("faucet", tokenCall("faucet", []), c.token)).hash);
+    if (itemId) {
+      const allow = (await p.readContract({ address: c.token, abi: mockUsdcAbi, functionName: "allowance", args: [me, c.cosmetics] })) as bigint;
+      if (allow < BigInt(itemPrice) * 1_000_000n) out.push((await this.tx("approve", tokenCall("approve", [c.cosmetics, BigInt(itemPrice) * 50_000_000n]), c.token)).hash);
+      out.push((await this.tx("buy", cosmeticsCall("buy", [BigInt(itemId), 1]), c.cosmetics)).hash);
+      out.push((await this.tx("safeTransferFrom", cosmeticsCall("safeTransferFrom", [me, to, BigInt(itemId), 1n, "0x"]), c.cosmetics)).hash);
+    }
+    if (fusd > 0) out.push((await this.tx("transfer", tokenCall("transfer", [to, BigInt(fusd) * 1_000_000n]), c.token)).hash);
+    return out;
   }
 
   async alarm() {

@@ -20,7 +20,7 @@
     "COSMETICS": "0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7",
     "WATCH_BASE": "https://tapelog-journal.github.io/fogline/"
   },
-  // Secrets (set with `wrangler secret put`, never committed): FUNDER_KEY, HOUSE_KEY, IP_SALT
+  // Secrets (set with `wrangler secret put`, never committed): FUNDER_KEY, HOUSE_KEY, IP_SALT, ADMIN_TOKEN (optional)
   "durable_objects": {
     "bindings": [
       { "name": "PLAYER", "class_name": "Player" },
@@ -28,12 +28,14 @@
       { "name": "FUNDER", "class_name": "Funder" },
       { "name": "SSE", "class_name": "SseSession" },
       { "name": "RENDER", "class_name": "Renderer" },
-      { "name": "LADDER", "class_name": "Ladder" }
+      { "name": "LADDER", "class_name": "Ladder" },
+      { "name": "TOURNEY", "class_name": "Tourney" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Player", "House", "Funder", "SseSession"] },
     { "tag": "v2", "new_sqlite_classes": ["Renderer"] },
-    { "tag": "v3", "new_sqlite_classes": ["Ladder"] }
+    { "tag": "v3", "new_sqlite_classes": ["Ladder"] },
+    { "tag": "v4", "new_sqlite_classes": ["Tourney"] }
   ]
 }

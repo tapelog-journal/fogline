@@ -1,7 +1,8 @@
 // Plain HTTP JSON API mirroring the MCP tools, so any agent that can fetch a URL can play.
 // Every action accepts GET (query params) and POST (JSON body). Always HTTP 200 with ok:true/false,
 // because many agent fetch tools discard non-200 bodies. Base Sepolia testnet only.
-import { DISCLAIMER, FUNDING, ladder, renderer, watchLink, type Env } from "./env";
+import { DISCLAIMER, FUNDING, ladder, renderer, tourney, watchLink, type Env } from "./env";
+import { publicView } from "./tourney";
 import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardImageUrl, boardPageUrl } from "./boardimg";
 import { checkChain, RANK_IDX, RULES } from "./tools";
 import { mdPage } from "./md";
@@ -10,13 +11,13 @@ import { RANK_NAMES } from "../../agent/src/rules";
 import { Phase } from "../../agent/src/rules";
 import { LEVEL_LABEL, parseLevel } from "../../agent/src/levels";
 
-const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board", "ladder", "set-name", "equip-cosmetic"] as const;
+const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board", "ladder", "set-name", "equip-cosmetic", "tournament", "tournament-signup", "tournament-withdraw"] as const;
 type Action = (typeof ACTIONS)[number];
 
 // Link-preview and index crawlers must never trigger actions. User-initiated agent fetchers
 // (ChatGPT-User, Claude-User, Perplexity-User, generic HTTP clients) are allowed.
 const CRAWLER_UA = /(googlebot|bingbot|duckduckbot|yandex|baiduspider|slurp|applebot|facebookexternalhit|facebot|twitterbot|slackbot|discordbot|telegrambot|linkedinbot|whatsapp|skypeuripreview|embedly|redditbot|pinterest|gptbot|oai-searchbot|claudebot|anthropic-ai|ccbot|bytespider|amazonbot|petalbot|semrush|ahrefs|mj12bot|dotbot|headlesschrome.*preview|preview)/i;
-const READ_ONLY: Action[] = ["rules", "state", "wallet", "cosmetics", "ladder"];
+const READ_ONLY: Action[] = ["rules", "state", "wallet", "cosmetics", "ladder", "tournament"];
 
 const HEADERS = { "x-robots-tag": "noindex, nofollow, noarchive", "cache-control": "no-store, max-age=0", "access-control-allow-origin": "*" };
 
@@ -76,6 +77,12 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
     }
 
     if (action === "ladder") return ladderReply(p, env, origin);
+    if (action === "tournament") {
+      let you: string | undefined;
+      const sid = String(p.session ?? "");
+      if (/^fl_[0-9a-f]{32}$/.test(sid)) { try { you = (await (env.PLAYER.get(env.PLAYER.idFromName(sid)) as any).profile()).address; } catch {} }
+      return tournamentReply(p, env, origin, await (tourney(env) as any).overview(p.id ? String(p.id) : undefined), you);
+    }
 
     const session = String(p.session ?? "");
     if (!/^fl_[0-9a-f]{32}$/.test(session)) return reply(p, { ok: false, error: `missing or bad session. Get one from ${origin}/api/new-player` });
@@ -110,6 +117,21 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
         const r = await pl.buyCosmetic(item);
         return reply(p, { ok: true, item: r.item.name, alreadyOwned: r.alreadyOwned, equipped: r.equipped, txs: r.txs.map((t: any) => t.url),
           text: `${r.alreadyOwned ? "Already owned" : "Bought"} ${r.item.name} with test fUSD${r.equipped ? " and equipped it" : ""}. It now shows in your board pictures. Decorative only.`, next: { cosmetics: `${origin}/api/cosmetics?session=${session}` } });
+      }
+      case "tournament-signup": {
+        if (p.name !== undefined) await pl.setProfile(checkName(p.name), p.client === undefined ? undefined : clientTag(p.client));
+        else if (p.client !== undefined) await pl.setProfile(undefined, clientTag(p.client));
+        const who = await pl.tourneyIdentity();
+        const r = await (tourney(env) as any).signup(who, p.id ? String(p.id) : undefined);
+        const v = publicView(r.tournament, env, who.address);
+        return reply(p, { ok: true, already: r.already, tournament: v.name, id: v.id, startsAt: v.startsAt, signedUp: v.signedUp,
+          text: `${r.already ? "You were already signed up for" : "Signed up for"} ${v.name}. It starts ${v.startsAt} (UTC); ${v.signedUp} player(s) so far, TapeLog bots fill the bracket. Single elimination, ${Math.round(v.turnTimeoutSeconds / 60)} min per turn. When your match is created it shows up in ${origin}/api/tournament?session=${session} (and on the Play page); place your army and move as usual. Prizes are a cosmetic banner and test fUSD only.`,
+          next: { tournament: `${origin}/api/tournament?session=${session}`, page: "https://tapelog-journal.github.io/fogline/tournament.html" } });
+      }
+      case "tournament-withdraw": {
+        const who = await pl.tourneyIdentity();
+        const r = await (tourney(env) as any).withdraw(who.address, p.id ? String(p.id) : undefined);
+        return reply(p, { ok: true, removed: r.removed, text: r.removed ? "You withdrew from the tournament." : "You were not signed up." });
       }
       case "equip-cosmetic": {
         const item = String(p.item ?? p.id ?? "");
@@ -220,6 +242,16 @@ async function ladderReply(p: Record<string, any>, env: Env, origin: string) {
   return reply(p, { ok: true, ladder: rows, totalRated: t.total, matchesScanned: t.scanned, recent: t.recent, page: "https://tapelog-journal.github.io/fogline/ladder.html",
     text: `Fogline ladder (Elo, start ${1200}): ${rows.slice(0, 10).map((r: any) => `${r.rank}. ${r.name ?? r.player} ${r.rating} (${r.wins}-${r.losses}-${r.draws}, ${r.clientLabel})`).join("; ") || "no rated matches yet"}. Ratings change only for matches that settled onchain. Set your name: ${origin}/api/set-name?session=SESSION&name=HANDLE` },
     () => `### Fogline ladder\n\nElo ratings from matches that settled onchain (testnet). Client kind is self-reported.\n\n| # | Player | Rating | W-L-D | Client |\n|-:|---|-:|:-:|---|\n` + rows.map((r: any) => `| ${r.rank} | ${(r.name ?? r.player).replace(/\|/g, "/")} | ${r.rating} | ${r.wins}-${r.losses}-${r.draws} | ${r.clientLabel} |`).join("\n") + `\n\n[Ladder page](https://tapelog-journal.github.io/fogline/ladder.html)\n\n_${DISCLAIMER}_`);
+}
+
+function tournamentReply(p: Record<string, any>, env: Env, origin: string, o: any, you?: string) {
+  const v = publicView(o.tournament, env, you);
+  const when = new Date(v.startsAtMs).toUTCString().replace(":00 GMT", " UTC");
+  const yourLine = v.you ? (v.you.match ? ` Your current match: #${v.you.match.matchId ?? "(being created)"} ${v.you.match.a} vs ${v.you.match.b} (${v.you.match.status}).` : v.you.signedUp ? (v.status === "signup" ? " You are signed up." : v.you.eliminated ? " You are out." : "") : " You are not signed up.") : "";
+  const text = v.status === "signup" ? `${v.name}: sign-ups open, starts ${when}. ${v.signedUp}/${v.maxPlayers} signed up. Single elimination vs agents, humans and TapeLog bots; prizes: ${v.prizes.map((x: any) => `#${x.place} ${x.cosmetic} + ${x.testFusd} test fUSD`).join(", ")}. Sign up: ${origin}/api/tournament-signup?session=SESSION${yourLine}`
+    : v.status === "running" ? `${v.name} is running: ${v.rounds.map((r: any) => `${r.name}: ${r.matches.map((m: any) => `${m.a ?? "bye"} vs ${m.b ?? "bye"}${m.winner ? ` → ${m.winner}` : m.matchId ? ` (#${m.matchId})` : ""}`).join("; ")}`).join(" | ")}.${yourLine}`
+    : v.status === "done" ? `${v.name} finished. Champion: ${v.champion}; runner-up: ${v.runnerUp}.${yourLine}` : `${v.name}: ${v.status}${v.note ? ` (${v.note})` : ""}.`;
+  return reply(p, { ok: true, tournament: v, list: o.list, page: "https://tapelog-journal.github.io/fogline/tournament.html", text }, () => `### ${v.name}\n\n${text}\n\n` + v.rounds.map((r: any) => `**${r.name}**\n` + r.matches.map((m: any) => `- ${m.a ?? "bye"} vs ${m.b ?? "bye"}: ${m.winner ? `**${m.winner}** advances` : m.matchId ? `[match #${m.matchId}](${m.watch})` : m.status}${m.note ? ` (${m.note})` : ""}`).join("\n")).join("\n\n") + `\n\n[Bracket page](https://tapelog-journal.github.io/fogline/tournament.html)\n\n_Prizes are valueless test tokens and decorative cosmetics only. ${DISCLAIMER}_`);
 }
 
 /** Client kind as reported by the client itself (no tracking): browser Play page, MCP, skill.md agent, or plain API. */

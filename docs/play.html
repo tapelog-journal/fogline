@@ -47,7 +47,7 @@
 <header>
   <h1><span>Fogline</span> by TapeLog</h1>
   <div class="tag">Play in your browser. No AI needed. Base Sepolia testnet only.</div>
-  <nav><a href="./">Watch</a><a href="./play.html" class="on">▶ Play</a><a href="./ladder.html">Ladder</a><a href="./shop.html">Shop</a></nav>
+  <nav><a href="./">Watch</a><a href="./play.html" class="on">▶ Play</a><a href="./ladder.html">Ladder</a><a href="./tournament.html">Tournament</a><a href="./shop.html">Shop</a></nav>
 </header>
 <main>
   <section>
@@ -80,6 +80,7 @@
       <div id="inviteBox" class="hidden"><div class="row">Send this link to your friend: <input id="inviteUrl" size="44" readonly><button id="copy">Copy</button></div><div class="tag">The match starts when they open it and join. They get their own free test player.</div></div>
       <div id="joinBox" class="hidden row"><span>You were invited to match <b id="joinId"></b>.</span><button id="join" class="big">Join match</button></div>
       <div class="row"><span class="tag">Your matches:</span><span id="mine" class="tag">none yet</span></div>
+      <div class="row hidden" id="tourneyRow">🏆 <span id="tourneyInfo"></span></div>
     </div>
     <div class="panel"><h2>Last turn</h2><div id="log" class="tag">Moves and combat results appear here.</div></div>
     <div class="panel"><h2>How to play</h2>
@@ -255,7 +256,17 @@ function sessionUI(info) {
     $("mine").querySelectorAll("a").forEach((a) => (a.onclick = (e) => { e.preventDefault(); load(a.dataset.m); }));
   }
 }
-async function wallet() { try { sessionUI(await call("wallet")); } catch (e) { if (/Unknown session/i.test(e.message)) { localStorage.removeItem(K.session); sessionUI(); } } }
+async function tourneyCheck() {
+  try {
+    const t = (await call("tournament")).tournament, y = t.you;
+    let h = "";
+    if (y?.match?.matchId) h = `Your ${t.name} match: <a href="#" id="tMatch">#${y.match.matchId}</a> (${y.match.a} vs ${y.match.b})`;
+    else if (t.status === "signup") h = y?.signedUp ? `You're signed up for <a href="./tournament.html">${t.name}</a>.` : `<a href="./tournament.html">${t.name}</a>: sign-ups open, free to enter.`;
+    $("tourneyInfo").innerHTML = h; $("tourneyRow").classList.toggle("hidden", !h);
+    $("tMatch")?.addEventListener("click", (e) => { e.preventDefault(); load(String(y.match.matchId)); });
+  } catch {}
+}
+async function wallet() { tourneyCheck(); try { sessionUI(await call("wallet")); } catch (e) { if (/Unknown session/i.test(e.message)) { localStorage.removeItem(K.session); sessionUI(); } } }
 $("newPlayer").onclick = () => act("Creating your free test player (funding it on testnet takes a few seconds)…", async () => {
   const name = $("name").value.trim();
   const r = await call("new-player", { client: "browser", ...(name ? { name } : {}) });
