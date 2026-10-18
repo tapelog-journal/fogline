@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Play Fogline in your browser · TapeLog</title>
+<meta name="description" content="Play Fogline, the hidden-army strategy game, in your browser against the TapeLog bot or a friend. Free test account on Base Sepolia testnet. Game for entertainment. Testnet only.">
+<meta property="og:title" content="Play Fogline · TapeLog"><meta property="og:description" content="Hidden armies, onchain moves. Play the TapeLog bot or a friend in your browser. Testnet only.">
+<style>
+  :root { --bg:#0b0b0b; --fg:#f4f4f4; --acc:#ffd400; --mut:#8a8a8a; }
+  * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif }
+  a { color:var(--acc) }
+  header { padding:14px 24px; border-bottom:1px solid #222; display:flex; gap:16px; align-items:baseline; flex-wrap:wrap }
+  h1 { margin:0; font-size:24px } h1 span { color:var(--acc) } .tag { color:var(--mut) }
+  nav { display:flex; gap:6px; margin-left:auto } nav a { text-decoration:none; color:var(--fg); border:1px solid #333; border-radius:6px; padding:4px 12px } nav a.on { border-color:var(--acc); color:var(--acc) }
+  main { display:grid; grid-template-columns:minmax(320px,620px) minmax(300px,1fr); gap:24px; padding:20px 24px; max-width:1300px }
+  @media (max-width:980px){ main { grid-template-columns:1fr } }
+  #stage { position:relative; border-radius:14px; overflow:hidden; padding:5% 7%; background:#111 center/cover no-repeat; box-shadow:0 10px 40px rgba(0,0,0,.6) }
+  #boardwrap { position:relative; width:max-content; margin:0 auto; border-radius:10px; padding:10px; border:3px solid var(--frame,#333); background:rgba(0,0,0,.25) }
+  #board { --cell:56px; display:grid; grid-template-columns:repeat(8,var(--cell)); grid-template-rows:repeat(8,var(--cell)); width:calc(var(--cell) * 8); height:calc(var(--cell) * 8); position:relative; user-select:none }
+  .cell { width:var(--cell); height:var(--cell); position:relative; box-shadow:inset 1px 1px 0 var(--line); contain:size layout }
+  .cell.l { background:var(--light) } .cell.d { background:var(--dark) }
+  .cell small { position:absolute; top:1px; left:3px; font-size:9px; line-height:1; color:var(--label); opacity:.75; pointer-events:none; z-index:2 }
+  .piece { position:absolute; inset:7%; cursor:default } .piece svg { position:absolute; inset:0; width:100%; height:100% }
+  .cell.can .piece { cursor:pointer } .cell.sel { box-shadow:inset 0 0 0 3px var(--acc) }
+  .cell.tgt::after { content:""; position:absolute; inset:36%; border-radius:50%; background:var(--acc); opacity:.75; z-index:3; pointer-events:none }
+  .cell.tgt.atk::after { inset:8%; background:transparent; border:3px solid #ff5a3c; opacity:.95 }
+  .cell.tgt { cursor:pointer } .cell.lastto { box-shadow:inset 0 0 0 2px #7fd3ff } .cell.lastfrom { box-shadow:inset 0 0 0 2px rgba(127,211,255,.45) }
+  .cell.place { cursor:grab } .cell.place:hover { box-shadow:inset 0 0 0 2px var(--acc) }
+  .fogbank svg { position:absolute; inset:2%; width:96%; height:96% }
+  .panel { background:#121212; border:1px solid #222; border-radius:10px; padding:14px 16px; margin-bottom:14px }
+  .panel h2 { margin:0 0 8px; font-size:16px; color:var(--acc) }
+  input,button,select { background:#1b1b1b; color:var(--fg); border:1px solid #333; border-radius:6px; padding:7px 10px; font:inherit }
+  button { cursor:pointer } button:hover:not(:disabled) { border-color:var(--acc) } button:disabled { opacity:.5; cursor:wait }
+  button.big { background:var(--acc); color:#111; font-weight:700; border-color:var(--acc) }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0 }
+  #status { font-size:17px; font-weight:650 } #sub { color:var(--mut); font-size:13px }
+  #log { font-family:ui-monospace,monospace; font-size:12.5px; white-space:pre-wrap; max-height:240px; overflow:auto; color:#cfcfcf }
+  .hidden { display:none !important } .warn { color:#ff9a6b } .ok { color:#7ee2a8 }
+  .busy::before { content:""; display:inline-block; width:12px; height:12px; margin-right:8px; border:2px solid var(--acc); border-top-color:transparent; border-radius:50%; animation:spin .8s linear infinite; vertical-align:-1px }
+  @keyframes spin { to { transform:rotate(360deg) } }
+  code { background:#1b1b1b; padding:1px 5px; border-radius:4px } .lost { display:flex; gap:2px; flex-wrap:wrap; min-height:26px } .lost svg { width:24px; height:24px }
+  footer { padding:16px 24px; color:var(--mut); border-top:1px solid #222; font-size:13px }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Fogline</span> by TapeLog</h1>
+  <div class="tag">Play in your browser. No AI needed. Base Sepolia testnet only.</div>
+  <nav><a href="./">Watch</a><a href="./play.html" class="on">▶ Play</a></nav>
+</header>
+<main>
+  <section>
+    <div id="stage"><div id="boardwrap"><div id="board"></div></div></div>
+    <div class="panel" style="margin-top:14px">
+      <div id="status">Welcome to Fogline</div>
+      <div id="sub">Get a free test player to start.</div>
+      <div class="row" id="placeCtl" style="display:none"><button id="shuffle">🔀 Shuffle</button><button id="confirm" class="big">Confirm army</button><button id="autoArmy">Let the server place it</button><span class="tag">Click two of your squares (or drag one onto another) to swap pieces.</span></div>
+      <div class="row"><span class="tag">Enemy lost:</span><div class="lost" id="lost1"></div></div>
+      <div class="row"><span class="tag">You lost:</span><div class="lost" id="lost0"></div></div>
+    </div>
+  </section>
+  <section>
+    <div class="panel" id="pStart">
+      <h2>1 · Your test player</h2>
+      <div id="noSession">
+        <p style="margin-top:0">You get a throwaway Base Sepolia <b>testnet</b> wallet run by the Fogline server, with a little test ETH for gas and 1000 fUSD (a valueless test token). There's no sign-up or real money. Your session key is stored only in this browser (localStorage).</p>
+        <div class="row"><input id="name" maxlength="24" placeholder="Ladder name (optional)"><button id="newPlayer" class="big">Get a free test player</button></div>
+        <details><summary class="tag">Already have a session from an agent?</summary><div class="row"><input id="claim" size="38" placeholder="fl_… session"><button id="claimBtn">Use it</button></div></details>
+      </div>
+      <div id="haveSession" class="hidden">
+        <div>Player <a id="addr" target="_blank"></a> <span id="who" class="tag"></span></div>
+        <div class="row"><button id="forget">Forget this player on this device</button></div>
+      </div>
+    </div>
+    <div class="panel" id="pMatch">
+      <h2>2 · Start a match</h2>
+      <div class="row"><button id="playBot" class="big">Play the TapeLog bot</button><button id="invite">Invite a friend</button></div>
+      <div id="inviteBox" class="hidden"><div class="row">Send this link to your friend: <input id="inviteUrl" size="44" readonly><button id="copy">Copy</button></div><div class="tag">The match starts when they open it and join. They get their own free test player.</div></div>
+      <div id="joinBox" class="hidden row"><span>You were invited to match <b id="joinId"></b>.</span><button id="join" class="big">Join match</button></div>
+      <div class="row"><span class="tag">Your matches:</span><span id="mine" class="tag">none yet</span></div>
+    </div>
+    <div class="panel"><h2>Last turn</h2><div id="log" class="tag">Moves and combat results appear here.</div></div>
+    <div class="panel"><h2>How to play</h2>
+      <p style="margin-top:0">Place your 16 hidden pieces on your two home rows. Then click one of your pieces to see where it can go, and click a square to move. Moving onto an enemy piece attacks it: both ranks are revealed, the higher rank wins, and on a tie the defender holds. Capture the enemy <b>Beacon</b> to win. The Ghost beats the Warden when it attacks, Sappers defuse Mines, and Scouts move up to 3 squares. Every move is a testnet transaction, so it takes a few seconds.</p>
+      <p class="tag">Pieces (rank): Beacon 0 · Ghost 1 · Scout 2 (×3) · Sapper 3 (×2) · Guard 4 (×3) · Knight 5 (×2) · Captain 6 · Warden 7 · Mine (×2). Hidden enemy pieces show a fog back.</p>
+    </div>
+  </section>
+</main>
+<footer>Fogline is an original, open-source TapeLog project. Stakes are off here and use only a valueless test token. Real-money wagering is disabled. <b>Game for entertainment. Testnet only.</b> Not investment advice.</footer>
+<script type="module">
+import * as A from "./art/art.js";
+const $ = (id) => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const API = q.get("api") || "https://fogline-mcp.tapelog.workers.dev";
+const PAGE = location.origin + location.pathname;
+const BLOCKED = new Set(["c4", "f5"]);
+const FILES = "abcdefgh";
+const RANKS = A.RANKS; // Beacon … Mine, index = rank
+const ARMY = [0, 1, 2, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 7, 8, 8];
+const K = { session: "fogline.session", match: "fogline.match" };
+const look = { skin: 0, table: 0, fog: 0 };
+
+// ---------- session (localStorage only; never put in URLs)
+const sess = () => localStorage.getItem(K.session);
+let cur = null, sel = null, busy = false, poll = null, army = null, placeSel = null, mySide = 0;
+
+async function call(action, params = {}) {
+  // text/plain POST = simple CORS request (no preflight); the session travels in the body, not the URL
+  const r = await fetch(`${API}/api/${action}`, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ ...params, session: sess() ?? undefined }) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || "request failed");
+  return j;
+}
+function setBusy(on, msg) {
+  busy = on; document.querySelectorAll("button").forEach((b) => { if (b.id !== "copy") b.disabled = on; });
+  if (msg) { $("sub").textContent = msg; $("sub").classList.toggle("busy", on); } else $("sub").classList.remove("busy");
+}
+async function act(msg, fn) {
+  if (busy) return;
+  setBusy(true, msg);
+  try { await fn(); } catch (e) { $("sub").innerHTML = `<span class="warn">${esc(e.message)}</span>`; }
+  finally { setBusy(false); }
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------- board
+const sqName = (r, c) => FILES[c] + (r + 1);
+function applyTable() {
+  const t = A.tableStyle(look.table), bw = $("boardwrap").style;
+  $("stage").style.backgroundImage = `url("${A.envURL(look.table)}")`;
+  for (const [k, v] of Object.entries({ light: t.light, dark: t.dark, line: t.line, label: t.label, frame: t.frame })) bw.setProperty("--" + k, v);
+}
+function fogbankSVG(color) { return `<svg viewBox="0 0 100 100"><g fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" opacity=".85"><path d="M14 36q12-10 24 0t24 0 24 0"/><path d="M14 52q12-10 24 0t24 0 24 0"/><path d="M14 68q12-10 24 0t24 0 24 0"/></g></svg>`; }
+function drawBoard() {
+  const b = $("board"); b.innerHTML = "";
+  const t = A.tableStyle(look.table), flip = mySide === 1;
+  const cells = new Map((cur?.view?.cells ?? []).map((c) => [c.sq, c]));
+  const placing = !!army;
+  if (placing) cur.view.startSquares.forEach((sq, i) => cells.set(sq, { sq, side: mySide, rank: RANKS[army[i]], place: i }));
+  const moves = cur?.yourTurn ? cur.moves ?? [] : [];
+  const movable = new Set(moves.map((m) => m.from));
+  const targets = sel ? new Map(moves.filter((m) => m.from === sel).map((m) => [m.to, m])) : new Map();
+  const last = cur?.view?.last;
+  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
+    const r = flip ? i : 7 - i, c = flip ? 7 - j : j, sq = sqName(r, c);
+    const d = document.createElement("div");
+    d.className = "cell " + ((r + c) % 2 ? "l" : "d"); d.dataset.sq = sq;
+    d.innerHTML = `<small>${sq}</small>`;
+    if (BLOCKED.has(sq)) { d.classList.add("fogbank"); d.insertAdjacentHTML("beforeend", fogbankSVG(t.fogbank)); }
+    const p = cells.get(sq);
+    if (p) {
+      const el = document.createElement("div"); el.className = "piece";
+      const ri = p.rank === null ? null : RANKS.indexOf(p.rank);
+      el.innerHTML = A.pieceSVG({ skin: look.skin, side: p.side, fog: look.fog, rank: ri });
+      el.title = (p.side === mySide ? "Your " : "Enemy ") + (p.rank ?? "hidden piece");
+      if (p.place !== undefined) { d.classList.add("place"); el.draggable = true; el.ondragstart = (e) => e.dataTransfer.setData("text/plain", String(p.place)); }
+      d.appendChild(el);
+    }
+    if (placing && p?.place !== undefined) {
+      d.onclick = () => { if (placeSel === null) { placeSel = p.place; drawBoard(); } else { swap(placeSel, p.place); placeSel = null; drawBoard(); } };
+      d.ondragover = (e) => e.preventDefault();
+      d.ondrop = (e) => { e.preventDefault(); swap(+e.dataTransfer.getData("text/plain"), p.place); placeSel = null; drawBoard(); };
+      if (placeSel === p.place) d.classList.add("sel");
+    } else if (!placing) {
+      if (movable.has(sq)) d.classList.add("can");
+      if (sel === sq) d.classList.add("sel");
+      const tg = targets.get(sq);
+      if (tg) { d.classList.add("tgt"); if (tg.attack) d.classList.add("atk"); }
+      d.onclick = () => clickSquare(sq, tg);
+    }
+    if (last && !placing) { if (last.to === sq) d.classList.add("lastto"); if (last.from === sq) d.classList.add("lastfrom"); }
+    b.appendChild(d);
+  }
+  const lost = cur?.view?.lost ?? [[], []];
+  for (const s of [0, 1]) {
+    const mine = s === mySide ? 0 : 1;
+    $("lost" + mine).innerHTML = (lost[s] ?? []).map((rk) => A.pieceSVG({ skin: look.skin, side: s, fog: look.fog, rank: rk === null ? null : RANKS.indexOf(rk), pip: false })).join("");
+  }
+}
+function swap(a, b) { if (a === b || !army) return; [army[a], army[b]] = [army[b], army[a]]; }
+function clickSquare(sq, tg) {
+  if (busy || !cur?.yourTurn) return;
+  if (tg && sel) return doMove(sel, sq);
+  sel = (cur.moves ?? []).some((m) => m.from === sq) && sel !== sq ? sq : null;
+  drawBoard();
+}
+function sizeBoard() {
+  const st = $("stage"), cs = getComputedStyle(st), bw = getComputedStyle($("boardwrap"));
+  const inner = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const chrome = parseFloat(bw.paddingLeft) + parseFloat(bw.paddingRight) + parseFloat(bw.borderLeftWidth) + parseFloat(bw.borderRightWidth);
+  const maxByHeight = window.innerWidth > 980 ? window.innerHeight * 0.78 : Infinity;
+  $("board").style.setProperty("--cell", Math.max(30, Math.floor((Math.min(inner, maxByHeight) - chrome) / 8)) + "px");
+}
+
+// ---------- army placement (client-side; ranks go to the server only when you confirm)
+function shuffled() {
+  const a = [...ARMY];
+  for (let i = a.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+  // keep the Beacon on the back row (indices 0-7 are the back row for side A, 8-15 for side B) and guard it with the Mines nearby
+  const back = mySide === 0 ? [0, 7] : [8, 15], bi = a.indexOf(0);
+  if (bi < back[0] || bi > back[1]) { const t = back[0] + (crypto.getRandomValues(new Uint8Array(1))[0] % 8); [a[bi], a[t]] = [a[t], a[bi]]; }
+  return a;
+}
+
+// ---------- match flow
+function show(j) {
+  cur = j; sel = null;
+  mySide = j.yourSide === "B" ? 1 : 0;
+  localStorage.setItem(K.match, j.matchId);
+  const needArmy = j.phase === "Committing" && !!j.next?.autoArmy;
+  if (needArmy && !army) army = shuffled();
+  if (!needArmy) army = null;
+  $("placeCtl").style.display = needArmy ? "flex" : "none";
+  const v = j.view ?? {};
+  let st, sub = "";
+  if (j.phase === "Open") { st = `Match #${j.matchId}: waiting for your opponent to join…`; sub = "Share the invite link. This page updates by itself."; }
+  else if (needArmy) { st = `Match #${j.matchId}: place your army`; sub = `You are side ${j.yourSide}${mySide ? " (board shown from your side)" : ""}. Arrange your pieces, then confirm.`; }
+  else if (j.phase === "Committing") { st = `Match #${j.matchId}: waiting for the opponent's army…`; }
+  else if (j.phase === "Playing" || j.phase === "PendingReveal") { st = j.yourTurn ? "Your turn: click a piece, then a square" : "Opponent's turn…"; sub = `Match #${j.matchId} · ply ${j.ply}` + (v.deadline ? ` · turn timer ${timer(v.deadline)}` : ""); }
+  else { const won = v.winner === mySide, draw = v.winner === 2; st = draw ? "Draw" : won ? "🏆 You won!" : "You lost"; sub = `Match #${j.matchId} is over (${j.status ?? j.phase}). Start another one on the right.`; }
+  $("status").textContent = st; $("sub").textContent = sub;
+  const lines = [...(j.lastTurn ?? [])];
+  $("log").innerHTML = (lines.length ? lines.map(esc).join("\n") : "") + (j.txs?.length ? "\n" + j.txs.map((u) => `<a href="${esc(u)}" target="_blank">tx</a>`).join(" ") : "") + (j.watch ? `\n<a href="${esc(j.watch)}" target="_blank">Watch / replay this match</a>` : "");
+  drawBoard();
+  schedule();
+}
+function timer(deadline) { const s = Math.max(0, deadline - Math.floor(Date.now() / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+function schedule() {
+  clearTimeout(poll);
+  if (!cur || ["Settled"].includes(cur.phase)) return;
+  const waiting = !(cur.yourTurn || (cur.phase === "Committing" && cur.next?.autoArmy));
+  poll = setTimeout(refresh, waiting ? 4000 : 15000);
+}
+async function refresh() {
+  if (busy || !sess() || !cur) return schedule();
+  try { show(await call("state", { match: cur.matchId })); } catch (e) { $("sub").textContent = e.message; schedule(); }
+}
+async function load(id) { await act(`Loading match #${id}…`, async () => show(await call("state", { match: id }))); }
+function doMove(from, to) {
+  act(`Moving ${from} → ${to}… (a testnet transaction, then the opponent replies)`, async () => show(await call("move", { match: cur.matchId, from, to, ply: cur.ply })));
+}
+
+// ---------- session UI
+function sessionUI(info) {
+  const has = !!sess();
+  $("noSession").classList.toggle("hidden", has); $("haveSession").classList.toggle("hidden", !has);
+  $("pMatch").style.opacity = has ? 1 : 0.5;
+  if (info) {
+    $("addr").textContent = info.address.slice(0, 6) + "…" + info.address.slice(-4); $("addr").href = `https://sepolia.basescan.org/address/${info.address}`;
+    $("who").textContent = `${info.eth ? Number(info.eth).toFixed(4) + " test ETH · " + info.fUSD + " fUSD" : ""}`;
+    const ms = info.matches ?? [];
+    $("mine").innerHTML = ms.length ? ms.slice(-8).reverse().map((m) => `<a href="#" data-m="${m}">#${m}</a>`).join(" · ") : "none yet";
+    $("mine").querySelectorAll("a").forEach((a) => (a.onclick = (e) => { e.preventDefault(); load(a.dataset.m); }));
+  }
+}
+async function wallet() { try { sessionUI(await call("wallet")); } catch (e) { if (/Unknown session/i.test(e.message)) { localStorage.removeItem(K.session); sessionUI(); } } }
+$("newPlayer").onclick = () => act("Creating your free test player (funding it on testnet takes a few seconds)…", async () => {
+  const name = $("name").value.trim();
+  const r = await call("new-player", { client: "browser", ...(name ? { name } : {}) });
+  localStorage.setItem(K.session, r.session);
+  $("sub").textContent = r.funded ? "Your player is ready and funded with test tokens." : `Player created, but not funded: ${r.fundingNote}`;
+  await wallet();
+});
+$("claimBtn").onclick = () => act("Checking that session…", async () => {
+  const s = $("claim").value.trim();
+  if (!/^fl_[0-9a-f]{32}$/.test(s)) throw new Error("a session looks like fl_ followed by 32 hex characters");
+  localStorage.setItem(K.session, s); $("claim").value = "";
+  try { await call("wallet"); } catch (e) { localStorage.removeItem(K.session); throw e; }
+  await wallet();
+});
+$("forget").onclick = () => { if (!confirm("Forget this test player on this device? You can't get it back unless you saved the session.")) return; localStorage.removeItem(K.session); localStorage.removeItem(K.match); cur = null; army = null; drawEmpty(); sessionUI(); };
+$("playBot").onclick = () => act("Creating a match against the TapeLog bot (two testnet transactions)…", async () => {
+  if (!sess()) throw new Error("get a free test player first");
+  const r = await call("play-bot", { ref: "web-" + Date.now().toString(36) });
+  show(await call("state", { match: r.matchId })); wallet();
+});
+$("invite").onclick = () => act("Creating a match for you and a friend…", async () => {
+  if (!sess()) throw new Error("get a free test player first");
+  const r = await call("create", { ref: "web-" + Date.now().toString(36) });
+  $("inviteUrl").value = `${PAGE}?join=${r.matchId}`; $("inviteBox").classList.remove("hidden");
+  show(await call("state", { match: r.matchId })); wallet();
+});
+$("copy").onclick = () => { navigator.clipboard?.writeText($("inviteUrl").value); $("copy").textContent = "Copied"; setTimeout(() => ($("copy").textContent = "Copy"), 1500); };
+$("join").onclick = () => act(`Joining match #${q.get("join")}…`, async () => {
+  if (!sess()) throw new Error("get a free test player first (button above), then join");
+  const id = q.get("join"); await call("join", { match: id });
+  $("joinBox").classList.add("hidden"); history.replaceState(null, "", PAGE);
+  show(await call("state", { match: id })); wallet();
+});
+$("shuffle").onclick = () => { army = shuffled(); placeSel = null; drawBoard(); };
+$("confirm").onclick = () => act("Committing your hidden army (only salted hashes go onchain)…", async () => {
+  const ranks = army.map((r) => RANKS[r]).join(",");
+  show(await call("set-army", { match: cur.matchId, ranks }));
+});
+$("autoArmy").onclick = () => act("Placing a random army…", async () => show(await call("auto-army", { match: cur.matchId })));
+
+function drawEmpty() { cur = { view: { cells: [], startSquares: [] } }; drawBoard(); cur = null; }
+
+// ---------- boot
+new ResizeObserver(sizeBoard).observe($("stage")); addEventListener("resize", sizeBoard); sizeBoard();
+applyTable(); drawEmpty(); sessionUI();
+if (q.get("join") && /^\d+$/.test(q.get("join"))) { $("joinId").textContent = "#" + q.get("join"); $("joinBox").classList.remove("hidden"); }
+if (sess()) { await wallet(); const m = localStorage.getItem(K.match); if (m && !q.get("join")) load(m); }
+setInterval(() => { if (cur?.view?.deadline && (cur.phase === "Playing")) { const t = $("sub").textContent.replace(/turn timer \d+:\d+/, "turn timer " + timer(cur.view.deadline)); if (!busy) $("sub").textContent = t; } }, 1000);
+window.__play = { get cur() { return cur; }, call };
+</script>
+</body>
+</html>

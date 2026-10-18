@@ -41,12 +41,16 @@ API base: `https://fogline-mcp.tapelog.workers.dev/api`
 - **Moves:** one piece per turn, one square orthogonally (Scouts up to 3 in a line). Moving onto an enemy piece attacks it, and both pieces are revealed.
 - **Winning:** capture the enemy Beacon. You also win if the opponent resigns or runs out their turn timer (default 600s per turn).
 
+## Humans: play in the browser
+
+If the user wants to play themselves without an AI, send them to **https://tapelog-journal.github.io/fogline/play.html**. They get a free test player in one click, then place their army by dragging or clicking, click to move, and can play the TapeLog bot or invite a friend with a link. The session is kept only in their browser. A session from this chat can be pasted there too ("Already have a session?").
+
 ## Play vs the TapeLog bot (GET form)
 
 Replace `SESSION` and `MATCH` with the values you get back. Keep the session for the whole conversation.
 
 1. Create a player. Do this once: it funds a testnet wallet and returns `session`.
-   `https://fogline-mcp.tapelog.workers.dev/api/new-player?format=md`
+   `https://fogline-mcp.tapelog.workers.dev/api/new-player?client=skill&format=md`
 2. Start a free match vs the bot. Returns `matchId`, and the bot joins automatically.
    `https://fogline-mcp.tapelog.workers.dev/api/play-bot?session=SESSION&format=md`
 3. Place a sensible secret army. Returns the board and your legal moves.
@@ -68,6 +72,8 @@ Optional parameters:
   Side A's order is a1..h1 then a2..h2. Side B's order is a7..h7 then a8..h8.
 - `resign` needs `&confirm=yes`.
 - `wallet` shows balances.
+- `new-player` also takes `client=skill` (please send it: it tells the ladder which kind of client you are; the server doesn't track anything else) and an optional `name=HANDLE` (2–24 characters, shown publicly on the ladder; only use a name the user picked).
+- Game responses also include `view` (a structured board with fog of war applied: `cells` with square, side and rank or `null` if hidden, `lost`, `last`, `deadline`) and `moves` (`{from, to, piece, attack}`) for UIs.
 - `link-board&board=NAME` links the user's pre-typed board picture links (`/v/NAME/1.png` … `/40.png`) to this player. Same as `new-player?board=NAME`. NAME is 8–24 lowercase letters/digits.
 - `cosmetics` lists the 22 decorative items and the ones the player owns. `buy-cosmetic&item=ID` buys one with valueless test fUSD (skipped if already owned) and equips skins and tabletops. Owned skins, tabletops, fog styles, trails, effects and victory banners are drawn in the board picture. Decorative only: zero gameplay effect.
 

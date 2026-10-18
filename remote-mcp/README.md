@@ -37,6 +37,10 @@ Funding policy (see `src/env.ts`):
 - `cosmetics` and `buy-cosmetic&item=ID` (API), or `fogline_cosmetics` and `fogline_buy_cosmetic` (MCP): decorative items paid for with valueless test fUSD.
 - Tests: `npm test` (renderer unit tests), `node test/history-check.mjs 10 15`, `node test/image-e2e.mjs`.
 
+## Browser play
+
+`docs/play.html` (https://tapelog-journal.github.io/fogline/play.html) is a no-AI human client. It uses the same HTTP API. It creates a session with `new-player?client=browser` (same funding caps per IP and per day as agents) and keeps the session only in `localStorage`; requests are `text/plain` POSTs, so the session never goes into a URL. It places the army client-side and sends it with `set-army`, moves by clicking `moves`, and polls `state` while waiting. Invites are `play.html?join=MATCH`. The board comes from the response's `view` field, which is fog-of-war filtered on the server: hidden ranks are `null`.
+
 ## Deploy
 
 ```bash

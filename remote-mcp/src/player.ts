@@ -65,6 +65,16 @@ export class Player extends DurableObject<Env> {
     });
   }
 
+  /** Optional public profile: a handle the player chose and the client kind it reported (self-report only). */
+  async setProfile(name?: string, client?: string) {
+    const address = await this.address();
+    const cur = (await this.ctx.storage.get<{ name?: string; client?: string }>("profile")) ?? {};
+    const next = { name: name === undefined ? cur.name : name || undefined, client: client ?? cur.client };
+    await this.ctx.storage.put("profile", next);
+    return { address, ...next };
+  }
+  async profile() { return { address: await this.address(), ...((await this.ctx.storage.get<{ name?: string; client?: string }>("profile")) ?? {}) }; }
+
   async info() {
     const c = cfg(this.env), address = await this.address(), p = pub(c.rpcUrl);
     const [eth, fusd] = await Promise.all([
@@ -272,6 +282,7 @@ export class Player extends DurableObject<Env> {
       legalMoves: legal,
       movesByPiece: groupMoves(legal).map((g) => ({ piece: g.piece, from: coord(g.from), to: g.tos.map((t) => coord(t.to) + (t.attack ? "⚔️" : "")) })),
       watch: watchLink(this.env, s.id),
+      last: lastTurn?.last, deadline: Number(s.match.deadline), turn: Number(s.match.turn), winner: Number(s.match.winner), reason: Number(s.match.reason),
     };
   }
 

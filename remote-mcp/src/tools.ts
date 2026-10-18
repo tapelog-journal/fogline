@@ -91,6 +91,7 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
       const session = "fl_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
       const r = await player(session).init(session, ip);
       if (board) { try { await player(session).setBoardAlias(board); } catch (e: any) { r.aliasError = String(e?.message ?? e); } }
+      try { await player(session).setProfile(undefined, "mcp"); } catch {}
       return text(`New Fogline player created.\nsession: ${session}  (pass this to every Fogline tool)\nwallet: ${r.address} (Base Sepolia testnet, managed by the server)\n` +
         (r.funding.ok ? `funded with ${r.funding.amountEth} test ETH: ${r.funding.url}\n` : `NOT funded: ${r.funding.reason}. You can still watch and read state, but cannot send moves until funded.\n`) +
         (r.faucet ? `1000 fUSD test tokens: ${r.faucet.url}\n` : "") + `\nNext: fogline_play_bot to play the TapeLog house bot.`);

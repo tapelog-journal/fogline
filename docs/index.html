@@ -43,12 +43,14 @@
   .legend div { display:flex; align-items:center; gap:6px } .legend svg { width:30px; height:30px; flex:none }
   footer { padding:16px 24px; color:var(--mut); border-top:1px solid #222; font-size:13px }
   .ctl { display:flex; gap:8px; align-items:center; margin-top:8px }
+  nav { display:flex; gap:6px; margin-left:auto } nav a { text-decoration:none; color:var(--fg); border:1px solid #333; border-radius:6px; padding:4px 12px } nav a.on { border-color:var(--acc); color:var(--acc) } nav a.playbtn { background:var(--acc); color:#111; font-weight:700; border-color:var(--acc) }
 </style>
 </head>
 <body>
 <header>
   <h1><span>Fogline</span> by TapeLog</h1>
   <div class="tag">Hidden armies. Onchain moves. Agents welcome. Base Sepolia testnet only.</div>
+  <nav><a href="./" class="on">Watch</a><a href="./play.html" class="playbtn">▶ Play</a></nav>
 </header>
 <main>
   <section>

@@ -5,7 +5,8 @@ import { DISCLAIMER, FUNDING, renderer, watchLink, type Env } from "./env";
 import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardImageUrl, boardPageUrl } from "./boardimg";
 import { checkChain, RANK_IDX, RULES } from "./tools";
 import { mdPage } from "./md";
-import { parseSquare } from "./view";
+import { coord, parseSquare } from "./view";
+import { RANK_NAMES } from "../../agent/src/rules";
 import { Phase } from "../../agent/src/rules";
 
 const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board"] as const;
@@ -58,9 +59,12 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
       const session = "fl_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
       const board = p.board === undefined ? undefined : String(p.board).toLowerCase();
       if (board !== undefined && !ALIAS_RE.test(board)) return reply(p, { ok: false, error: "board must be 8-24 lowercase letters/digits (the name in the user's /v/NAME/1.png board links)" });
+      const client = clientTag(p.client);
+      const name = p.name === undefined ? undefined : checkName(p.name);
       const stub = env.PLAYER.get(env.PLAYER.idFromName(session)) as any;
       const r = await stub.init(session, ip) as any;
       if (board) { try { await stub.setBoardAlias(board); } catch (e: any) { r.aliasError = String(e?.message ?? e); } }
+      try { await stub.setProfile(name, client); } catch (e) { console.log("profile failed", String(e).slice(0, 120)); }
       const next = { playBot: `${origin}/api/play-bot?session=${session}`, wallet: `${origin}/api/wallet?session=${session}` };
       return reply(p, {
         ok: true, session, address: r.address, funded: r.funding.ok, fundingTx: r.funding.url, fundingNote: r.funding.ok ? `${r.funding.amountEth} test ETH for gas + 1000 fUSD test tokens` : r.funding.reason,
@@ -176,8 +180,30 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
     txs: (r.txs ?? []).map((t: any) => t.url), watch: r.watch, next,
     text: (prefix ? prefix + " " : "") + [...((r.events?.length ? r.events : r.lastTurn) ?? []), r.summary].filter(Boolean).join(". "),
     board_ascii: r.board,
+    // structured, fog-of-war-filtered view for UIs (the Play page): own ranks, revealed enemy ranks, hidden = null
+    view: r.scene ? {
+      side: r.scene.viewSide, turn: r.turn, winner: r.winner, reason: r.reason, deadline: r.deadline,
+      cells: r.scene.cells.map((c: any) => ({ sq: coord(c.sq), side: c.side, rank: c.rank === null ? null : RANK_NAMES[c.rank] })),
+      lost: r.scene.captured.map((l: any[]) => l.map((c) => (c.rank === null ? null : RANK_NAMES[c.rank]))),
+      last: r.last ? { from: coord(r.last.from), to: coord(r.last.to) } : null,
+      startSquares: r.scene.viewSide >= 0 ? Array.from({ length: 16 }, (_, i) => coord(r.scene.viewSide === 0 ? i : 48 + i)) : [],
+    } : undefined,
+    moves: legal.map((m: any) => ({ from: m.fromSq, to: m.toSq, piece: m.piece ?? null, attack: !!m.attack })),
   };
   return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs, boardImage: img, boardPage: page }, { move: moveUrl, refresh: next.state, extra: next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : [] }));
+}
+
+/** Client kind as reported by the client itself (no tracking): browser Play page, MCP, skill.md agent, or plain API. */
+export function clientTag(v: unknown): string {
+  const s = String(v ?? "").toLowerCase();
+  return s === "browser" || s === "mcp" || s === "skill" ? s : "api";
+}
+/** Optional public handle: 2-24 letters, digits, spaces, _ . - (empty string clears it). */
+export function checkName(v: unknown): string {
+  const s = String(v ?? "").trim().replace(/\s+/g, " ");
+  if (s === "") return "";
+  if (!/^[A-Za-z0-9][A-Za-z0-9 _.\-]{1,23}$/.test(s)) throw new Error("name must be 2-24 characters: letters, digits, spaces, _ . -");
+  return s;
 }
 
 function reply(p: Record<string, any>, body: Record<string, any>, textFn?: () => string): Response {
