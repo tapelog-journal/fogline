@@ -255,7 +255,7 @@ export function boardSvg(sc: BoardScene, opts: { envImage?: string } = {}): stri
     out.push(`<rect x="${b.x + 3}" y="${b.y + 3}" width="${CELL - 6}" height="${CELL - 6}" rx="9" fill="${glow}" fill-opacity=".14" stroke="${glow}" stroke-width="3"/>`);
     const ca = center(L.from, flip), cb = center(L.to, flip);
     out.push(trailFx(moverLook.trail, ca, cb));
-    out.push(arrow(ca, cb, glow));
+    out.push(moverLook.trail ? `<g opacity=".3">${arrow(ca, cb, glow)}</g>` : arrow(ca, cb, glow)); // let an owned trail show through
   }
 
   // ---- pieces

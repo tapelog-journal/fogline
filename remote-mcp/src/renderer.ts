@@ -13,7 +13,7 @@ import { GAME_DEPLOY_BLOCK, head, loadHistory, scanCreated, type History } from 
 
 export interface RenderReq { scene: BoardScene; players: [string, string]; block: string; width?: number; /** shop previews: keep scene.looks / scene.last as given */ fixedLooks?: boolean }
 const MAX_CACHED = 400;
-const RENDER_VERSION = "r3|"; // bump when the drawing changes
+const RENDER_VERSION = "r4|"; // bump when the drawing changes
 
 export class Renderer extends DurableObject<Env> {
   private looks = new Map<string, { at: number; look: Look }>();

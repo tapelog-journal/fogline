@@ -50,6 +50,8 @@ export async function handleShopPreview(req: Request, env: Env): Promise<Respons
     if (s.match.phase === Phase.None) return new Response("no such match", { status: 404 });
     const look = lookWith(it?.id ?? 0);
     const scene = sceneFrom(s, -1, undefined, [look, { ...look, fx: [...look.fx] }]);
+    // a finished match would show its result banner over every preview: show the position as in play instead
+    if (scene.phase >= Phase.Ended) { scene.phase = Phase.Playing; scene.winner = 0; scene.reason = 0; }
     // stage a sample moment for things that only show on a move, a capture or a win
     if (it && (it.category === "effect" || it.category === "trail")) {
       const pick = stagedMove(scene.cells, it.category === "trail");
