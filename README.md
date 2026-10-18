@@ -37,6 +37,56 @@ npx tsx src/cli.ts play <matchId>        # baseline bot plays to the end, reveal
 
 To let an AI assistant play, run `npm run build && FOGLINE_CHAIN_ID=84532 node dist/mcp.js` and add it as a stdio MCP server. Its tools are `fogline_rules`, `fogline_state`, `fogline_create`, `fogline_join`, `fogline_move`, `fogline_auto_step` and `fogline_resign`. To watch a match live, open `https://tapelog-journal.github.io/fogline/?game=0x059db9310c1DFB3009DAd13d043589DDBe75C874&match=<id>`.
 
+## Play from ChatGPT / Claude
+
+A hosted remote MCP server lets an AI assistant play Fogline for you. It needs no install, no wallet and no login.
+
+**MCP URL (Streamable HTTP):** `https://fogline-mcp.tapelog.workers.dev/mcp`  
+**Legacy SSE URL:** `https://fogline-mcp.tapelog.workers.dev/sse`  
+**Health and config:** https://fogline-mcp.tapelog.workers.dev/health
+
+How it works:
+
+- **The server manages a throwaway testnet wallet for each player.** `fogline_new_player` creates a Base Sepolia key and funds it with 0.0001 test ETH for gas plus 1000 fUSD test tokens. It returns a session id that the assistant passes to every later call.
+- **Keys and army salts stay server-side** in Cloudflare Durable Objects and are never returned to the model.
+- **Chain:** only chain 84532 is accepted.
+- **House bot:** `fogline_play_bot` starts a match against the TapeLog house bot, which joins, places its army and replies to every move automatically. `fogline_move` waits for the reply and returns what happened, the new board and your next legal moves.
+- **Watch link:** every result includes `https://tapelog-journal.github.io/fogline/?game=0x059db9310c1DFB3009DAd13d043589DDBe75C874&match=<id>`.
+
+**Tools:**
+
+- `fogline_rules`, `fogline_new_player`, `fogline_wallet`
+- Start a match: `fogline_play_bot`, `fogline_create`, `fogline_join`
+- Place an army: `fogline_auto_army`, `fogline_set_army`
+- Play: `fogline_move`, `fogline_state`, `fogline_resign`
+- Read-only `search` / `fetch` for rules and public match views (used by ChatGPT deep research and company knowledge)
+
+**Add it in ChatGPT** (web; see [OpenAI: Add custom MCP server](https://developers.openai.com/api/docs/guides/custom-mcp-server)):
+
+1. Go to **Plugins**, select **+**, then **Add custom MCP server**.
+2. Set the name to "Fogline" and the URL to `https://fogline-mcp.tapelog.workers.dev/mcp`.
+3. Set authentication to **No authentication**.
+4. Tick **I understand and want to continue**, then select **Create as a plugin**.
+5. Install the plugin, then type `@Fogline` in a new chat.
+
+Write tools such as moves need full MCP support. OpenAI currently offers that on Business, Enterprise and Edu workspaces. On Plus and Pro, custom MCP servers are limited to read/fetch tools.
+
+**Add it in Claude** (Free plans allow one custom connector; also Pro, Max, Team and Enterprise; see [Anthropic: custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)):
+
+1. Go to **Customize → Connectors → Add → Custom → Web**.
+2. Paste the MCP URL and choose **No sign in**.
+
+**Sample prompt:** *"Use the Fogline app to play a game against the TapeLog bot. Create a player, start a free match, auto-place my army, then show me the board and suggest a move each turn. Wait for my choice before you move."*
+
+**Funding limits:** the faucet is valueless testnet ETH and is rate-limited so it can't be drained.
+
+- One 0.0001 ETH grant per session.
+- At most 10 new funded sessions per network per day and 40 per day overall.
+- Small top-ups only when a wallet runs below 0.00003 ETH: 2 per session and 40 overall per day.
+- A reserve is kept for the house bot.
+
+Source: [`remote-mcp/`](remote-mcp/) (Cloudflare Workers free tier). Game for entertainment. Testnet only. Not investment advice.
+
 ## Art and cosmetics
 
 ![Fogline viewer with the Obsidian & Gold skin on the Deep-Space Bridge tabletop](docs/art/promo/hero-viewer.jpg)
@@ -121,6 +171,7 @@ Cosmetics are **decorative only and have zero gameplay effect**. The game contra
 | `script/DeployCosmeticsMainnet.s.sol` | *Future:* cosmetics only, priced in Base USDC. Refuses unless `ALLOW_MAINNET_COSMETICS=yes-owner-approved` |
 | `test/` | Foundry tests: commit-reveal, combat, fog banks, win, timeouts, escrow payouts, draws, anti-cheat, cosmetics |
 | `agent/` | TypeScript agent SDK, baseline bot, `fogline` CLI, bot-vs-bot demo, and an MCP server so AI assistants can play |
+| `remote-mcp/` | Hosted remote MCP server (Cloudflare Worker + Durable Objects): per-player testnet wallets, house bot, faucet with rate limits |
 | `docs/` | Static match viewer (replay files or live RPC), served by GitHub Pages, and cosmetic metadata |
 
 ## Quick start (local chain)

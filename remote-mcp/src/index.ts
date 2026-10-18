@@ -1,0 +1,66 @@
+// Fogline remote MCP server on Cloudflare Workers.
+//   POST/GET/DELETE /mcp   Streamable HTTP (stateless, JSON responses)
+//   GET /sse + POST /messages?sessionId=...   legacy SSE transport
+// Base Sepolia testnet only. Game for entertainment. Testnet only. Not investment advice.
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { buildServer, houseAddress, VERSION } from "./tools";
+import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, type Env } from "./env";
+
+export { Player } from "./player";
+export { House } from "./house";
+export { Funder } from "./funder";
+export { SseSession } from "./sse";
+
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-allow-headers": "content-type, accept, authorization, mcp-session-id, mcp-protocol-version, last-event-id",
+  "access-control-expose-headers": "mcp-session-id, mcp-protocol-version",
+};
+const withCors = (r: Response) => { const h = new Headers(r.headers); for (const [k, v] of Object.entries(CORS)) h.set(k, v); return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h }); };
+
+export default {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(req.url);
+    cfg(env); // hard-refuse misconfigured chain ids at the edge
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+    const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
+
+    if (url.pathname === "/mcp" || url.pathname === "/mcp/") {
+      if (req.method !== "POST") {
+        // stateless server: no standalone SSE stream / session to delete
+        return withCors(new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed. POST JSON-RPC to /mcp (or use /sse for the legacy SSE transport)." }, id: null }), { status: 405, headers: { "content-type": "application/json", allow: "POST, OPTIONS" } }));
+      }
+      const server = buildServer(env, ip);
+      const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+      await server.connect(transport);
+      const res = await transport.handleRequest(req);
+      ctx.waitUntil(Promise.resolve().then(() => server.close()).catch(() => {}));
+      return withCors(res);
+    }
+
+    if (url.pathname === "/sse" || url.pathname === "/sse/") {
+      if (req.method !== "GET") return new Response("GET only", { status: 405 });
+      const sid = crypto.randomUUID().replace(/-/g, "");
+      const u = new URL(req.url); u.searchParams.set("sessionId", sid);
+      return env.SSE.get(env.SSE.idFromName(sid)).fetch(new Request(u.toString(), req));
+    }
+    if (url.pathname === "/messages" || url.pathname === "/sse/message") {
+      const sid = url.searchParams.get("sessionId");
+      if (!sid || !/^[0-9a-f]{32}$/.test(sid)) return new Response("missing sessionId", { status: 400 });
+      return env.SSE.get(env.SSE.idFromName(sid)).fetch(req);
+    }
+
+    if (url.pathname === "/" || url.pathname === "/health") {
+      const c = cfg(env);
+      const stats = url.searchParams.has("stats") ? await env.FUNDER.get(env.FUNDER.idFromName("funder")).stats() : undefined;
+      return withCors(Response.json({
+        name: "Fogline remote MCP by TapeLog", version: VERSION, mcp: `${url.origin}/mcp`, sse: `${url.origin}/sse`, chainId: c.chainId, game: c.game, token: c.token,
+        house: houseAddress(env), maxHouseMatches: MAX_HOUSE_MATCHES,
+        funding: { perPlayerEth: Number(FUNDING.grantWei) / 1e18, maxPerIpPerDay: FUNDING.maxGrantsPerIpPerDay, maxPerDay: FUNDING.maxGrantsPerDay },
+        repo: "https://github.com/tapelog-journal/fogline", disclaimer: DISCLAIMER, ...(stats ? { stats } : {}),
+      }));
+    }
+    return new Response("not found", { status: 404 });
+  },
+};

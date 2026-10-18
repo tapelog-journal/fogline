@@ -1,0 +1,275 @@
+// One Durable Object per player session. Holds a throwaway Base Sepolia key and the secret army
+// salts for each match, signs that player's transactions, and never returns secrets to the model.
+import { DurableObject } from "cloudflare:workers";
+import { formatEther, formatUnits, zeroAddress, type Address, type Hex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { commitments, isLegalComposition, randomLayout, type Layout } from "../../agent/src/layout";
+import { legalMoves, Phase, PIECES, RANK_NAMES } from "../../agent/src/rules";
+import { combatNote, gameCall, matchIdFrom, mockUsdcAbi, narrate, pub, readState, sendTx, tokenCall, type SentTx } from "./chain";
+import { cfg, DEFAULT_TURN_TIMEOUT, txLink, watchLink, type Env } from "./env";
+import { Mutex, nonceStore } from "./store";
+import { boardView, diffEvents, sideOf, summary } from "./view";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export class UserError extends Error {}
+
+export interface TxOut { fn: string; hash: string; url: string }
+const out = (t: SentTx): TxOut => ({ fn: t.fn, hash: t.hash, url: txLink(t.hash) });
+
+export class Player extends DurableObject<Env> {
+  private lock = new Mutex();
+
+  private async key(): Promise<Hex> {
+    const k = await this.ctx.storage.get<Hex>("key");
+    if (!k) throw new UserError("Unknown session. Call fogline_new_player first and pass the session it returns.");
+    return k;
+  }
+  private async address(): Promise<Address> { return privateKeyToAccount(await this.key()).address; }
+  private async session(): Promise<string> { return (await this.ctx.storage.get<string>("session"))!; }
+  private houseAddress(): Address { return privateKeyToAccount(this.env.HOUSE_KEY as Hex).address; }
+  private async layout(id: bigint) { return this.ctx.storage.get<Layout>(`layout:${id}`); }
+
+  private async tx(fn: string, data: Hex, to?: Address): Promise<SentTx> {
+    const c = cfg(this.env), key = await this.key();
+    const send = () => sendTx({ rpc: c.rpcUrl, key, to: to ?? c.game, data, fn, nonces: nonceStore(this.ctx.storage), attempts: 3 });
+    try { return await send(); }
+    catch (e: any) {
+      const msg = String(e?.shortMessage ?? e?.message ?? e);
+      if (/insufficient funds|exceeds the balance/i.test(msg)) {
+        const r = await this.env.FUNDER.get(this.env.FUNDER.idFromName("funder")).topUp(await this.session(), await this.address());
+        if (!r.ok) throw new UserError(`Out of testnet gas and no top-up available: ${r.reason}`);
+        return await send();
+      }
+      throw new UserError(`${fn} failed: ${explain(msg)}`);
+    }
+  }
+
+  // ------------------------------------------------------------------ session
+
+  async init(session: string, ip: string) {
+    return this.lock.run(async () => {
+      if (await this.ctx.storage.get("key")) throw new UserError("session already exists");
+      const key = generatePrivateKey();
+      await this.ctx.storage.put({ key, session, created: Date.now() });
+      const address = privateKeyToAccount(key).address;
+      const funding = await this.env.FUNDER.get(this.env.FUNDER.idFromName("funder")).grant(session, address, ip);
+      let faucet: TxOut | undefined;
+      if (funding.ok) {
+        try { faucet = out(await this.tx("faucet", tokenCall("faucet", []), cfg(this.env).token)); } catch (e) { console.log("faucet failed", String(e)); }
+      }
+      return { address, funding: { ...funding, url: funding.hash ? txLink(funding.hash) : undefined }, faucet };
+    });
+  }
+
+  async info() {
+    const c = cfg(this.env), address = await this.address(), p = pub(c.rpcUrl);
+    const [eth, fusd] = await Promise.all([
+      p.getBalance({ address }),
+      p.readContract({ address: c.token, abi: mockUsdcAbi, functionName: "balanceOf", args: [address] }) as Promise<bigint>,
+    ]);
+    return { address, eth: formatEther(eth), fUSD: formatUnits(fusd, 6), matches: (await this.ctx.storage.get<string[]>("matches")) ?? [] };
+  }
+
+  private async remember(id: bigint) {
+    const ms = (await this.ctx.storage.get<string[]>("matches")) ?? [];
+    if (!ms.includes(id.toString())) { ms.push(id.toString()); await this.ctx.storage.put("matches", ms.slice(-50)); }
+  }
+
+  private async stakeSetup(stake: bigint): Promise<SentTx[]> {
+    const c = cfg(this.env), txs: SentTx[] = [];
+    if (stake <= 0n) return txs;
+    const address = await this.address();
+    const bal = (await pub(c.rpcUrl).readContract({ address: c.token, abi: mockUsdcAbi, functionName: "balanceOf", args: [address] })) as bigint;
+    if (bal < stake) txs.push(await this.tx("faucet", tokenCall("faucet", []), c.token));
+    txs.push(await this.tx("approve", tokenCall("approve", [c.game, stake]), c.token));
+    return txs;
+  }
+
+  // ------------------------------------------------------------------ matches
+
+  async playBot(stakeUnits: string, turnTimeout?: number) {
+    return this.lock.run(async () => {
+      const stake = BigInt(stakeUnits);
+      const house = this.env.HOUSE.get(this.env.HOUSE.idFromName("house"));
+      if ((await house.activeCount()) >= 12) throw new UserError("The TapeLog house bot is busy with too many matches; try again in a few minutes.");
+      const txs = await this.stakeSetup(stake);
+      const created = await this.tx("createMatch", gameCall("createMatch", [stake > 0n ? cfg(this.env).token : zeroAddress, stake, turnTimeout ?? DEFAULT_TURN_TIMEOUT, this.houseAddress()]));
+      txs.push(created);
+      const id = matchIdFrom(created.receipt);
+      await this.remember(id);
+      const w = await house.watch(id.toString(), await this.session());
+      if (!w.ok) throw new UserError(w.reason!);
+      // wait (briefly) for the house bot to join so the player can place their army right away
+      let s = await readState(cfg(this.env).rpcUrl, cfg(this.env).game, id, created.receipt.blockNumber);
+      for (let i = 0; i < 14 && s.match.phase === Phase.Open; i++) { await sleep(2000); s = await readState(cfg(this.env).rpcUrl, cfg(this.env).game, id); }
+      return { matchId: id.toString(), joined: s.match.phase !== Phase.Open, txs: txs.map(out), watch: watchLink(this.env, id) };
+    });
+  }
+
+  async create(stakeUnits: string, opponent: string | undefined, turnTimeout?: number) {
+    return this.lock.run(async () => {
+      const stake = BigInt(stakeUnits);
+      const txs = await this.stakeSetup(stake);
+      const created = await this.tx("createMatch", gameCall("createMatch", [stake > 0n ? cfg(this.env).token : zeroAddress, stake, turnTimeout ?? DEFAULT_TURN_TIMEOUT, (opponent as Address) ?? zeroAddress]));
+      txs.push(created);
+      const id = matchIdFrom(created.receipt);
+      await this.remember(id);
+      return { matchId: id.toString(), txs: txs.map(out), watch: watchLink(this.env, id) };
+    });
+  }
+
+  async join(idStr: string) {
+    return this.lock.run(async () => {
+      const c = cfg(this.env), id = BigInt(idStr);
+      const s = await readState(c.rpcUrl, c.game, id);
+      if (s.match.phase !== Phase.Open) throw new UserError(`match #${id} is not open to join (phase ${Phase[s.match.phase]})`);
+      if (s.match.stake > 0n && s.match.token.toLowerCase() !== c.token.toLowerCase()) throw new UserError("that match uses an unknown token; refusing");
+      const txs = await this.stakeSetup(s.match.stake);
+      txs.push(await this.tx("joinMatch", gameCall("joinMatch", [id])));
+      await this.remember(id);
+      return { matchId: idStr, txs: txs.map(out), watch: watchLink(this.env, id) };
+    });
+  }
+
+  async commitArmy(idStr: string, ranks?: number[]) {
+    return this.lock.run(async () => {
+      const c = cfg(this.env), id = BigInt(idStr), address = await this.address();
+      const s = await readState(c.rpcUrl, c.game, id);
+      const side = sideOf(s, address);
+      if (side < 0) throw new UserError(`you are not a player in match #${id}`);
+      if (s.match.phase === Phase.Open) throw new UserError("the match has no opponent yet; wait for them to join");
+      if (s.match.phase !== Phase.Committing || s.match.committed[side]) throw new UserError(`army already placed or not in placement phase (phase ${Phase[s.match.phase]})`);
+      let l: Layout;
+      if (ranks) {
+        if (!isLegalComposition(ranks)) throw new UserError("illegal army: need exactly 1 Beacon, 1 Ghost, 3 Scouts, 2 Sappers, 3 Guards, 2 Knights, 1 Captain, 1 Warden, 2 Mines (16 pieces)");
+        l = { ranks, salts: randomLayout(side).salts };
+      } else l = (await this.layout(id)) ?? randomLayout(side);
+      await this.ctx.storage.put(`layout:${id}`, l); // persist secrets before committing
+      const t = await this.tx("commitLayout", gameCall("commitLayout", [id, commitments(id, address, l)]));
+      if (s.match.players.some((p) => p.toLowerCase() === this.houseAddress().toLowerCase())) await this.kickHouse(id, t.receipt.blockNumber);
+      const after = await this.waitTurn(id, side, t.receipt.blockNumber, 24_000);
+      return { txs: [out(t)], ...(await this.render(after, side, l)), events: [] as string[] };
+    });
+  }
+
+  async move(idStr: string, from: number, to: number) {
+    return this.lock.run(async () => {
+      const c = cfg(this.env), id = BigInt(idStr), address = await this.address();
+      let s = await readState(c.rpcUrl, c.game, id);
+      const side = sideOf(s, address), l = await this.layout(id);
+      if (side < 0) throw new UserError(`you are not a player in match #${id}`);
+      if (!l) throw new UserError("you have not placed an army in this match yet (fogline_auto_army)");
+      const txs: SentTx[] = [], events: string[] = [];
+      if (s.match.phase === Phase.PendingReveal && s.match.turn === side) {
+        const r = await this.reveal(id, s, l); txs.push(r); events.push(note(r, "your defender was revealed"));
+        s = await readState(c.rpcUrl, c.game, id, r.receipt.blockNumber);
+      }
+      if (s.match.phase !== Phase.Playing) throw new UserError(`cannot move now: phase ${Phase[s.match.phase]}`);
+      if (s.match.turn !== side) throw new UserError("it is not your turn; call fogline_state to see when it is");
+      const legal = legalMoves(s, side, l.ranks);
+      const mv = legal.find((m) => m.from === from && m.to === to);
+      if (!mv) {
+        const fromHere = legal.filter((m) => m.from === from).map((m) => m.to);
+        throw new UserError(`illegal move ${from}->${to}. ${fromHere.length ? `Legal targets from ${from}: ${fromHere.join(", ")}.` : `No legal moves from ${from}.`} All legal moves: ${legal.map((m) => `${m.from}->${m.to}`).join(" ")}`);
+      }
+      const before = s;
+      const t = await this.tx("move", gameCall("move", [id, from, to, l.ranks[mv.pieceIndex], l.salts[mv.pieceIndex]]));
+      txs.push(t);
+      const moveNote = `you ${mv.attack ? "attacked" : "moved"} ${from} -> ${to} with your ${RANK_NAMES[l.ranks[mv.pieceIndex]]}`;
+      if (s.match.players.some((p) => p.toLowerCase() === this.houseAddress().toLowerCase())) await this.kickHouse(id, t.receipt.blockNumber);
+      const after = await this.waitTurn(id, side, t.receipt.blockNumber, 30_000, txs, []);
+      const story = await narrate(c.rpcUrl, c.game, id, t.receipt.blockNumber, after.block, side, RANK_NAMES);
+      if (story && story.length) { events.push(moveNote, ...story.slice(1)); }
+      else { events.push(moveNote, ...diffEvents(before, after, side)); }
+      return { txs: txs.map(out), events, ...(await this.render(after, side, l)) };
+    });
+  }
+
+  /** Wait until it's this player's turn again (auto-revealing our defenders, auto-verifying a win). */
+  private async waitTurn(id: bigint, side: number, minBlock: bigint, budgetMs: number, txs: SentTx[] = [], events: string[] = []) {
+    const c = cfg(this.env), t0 = Date.now(), l = await this.layout(id);
+    let s = await readState(c.rpcUrl, c.game, id, minBlock);
+    while (true) {
+      const m = s.match;
+      if (m.phase === Phase.PendingReveal && m.turn === side && l) {
+        const r = await this.reveal(id, s, l); txs.push(r); events.push(note(r, "your defender was revealed"));
+        await this.kickHouse(id, r.receipt.blockNumber);
+        s = await readState(c.rpcUrl, c.game, id, r.receipt.blockNumber); continue;
+      }
+      if (m.phase === Phase.Ended && m.winner === side && !m.verified[side] && l) {
+        const r = await this.tx("verifyLayout", gameCall("verifyLayout", [id, l.ranks, l.salts])); txs.push(r);
+        events.push("you won! your army was verified onchain and the match settled");
+        s = await readState(c.rpcUrl, c.game, id, r.receipt.blockNumber); continue;
+      }
+      const mine = (m.phase === Phase.Playing && m.turn === side) || m.phase >= Phase.Ended || (m.phase === Phase.Committing && !m.committed[side]);
+      if (mine || Date.now() - t0 > budgetMs) return s;
+      await sleep(2000);
+      s = await readState(c.rpcUrl, c.game, id);
+    }
+  }
+
+  private async reveal(id: bigint, s: Awaited<ReturnType<typeof readState>>, l: Layout) {
+    const i = (s.board[s.match.pendTo] - 1) % PIECES;
+    return this.tx("revealDefense", gameCall("revealDefense", [id, l.ranks[i], l.salts[i]]));
+  }
+
+  private async kickHouse(id: bigint, minBlock?: bigint) {
+    try { await this.env.HOUSE.get(this.env.HOUSE.idFromName("house")).kick(id.toString(), minBlock?.toString()); } catch (e) { console.log("kick failed", String(e)); }
+  }
+
+  private async render(s: Awaited<ReturnType<typeof readState>>, side: number, l?: Layout) {
+    const v = boardView(s, side, l), sm = summary(s, side);
+    return {
+      matchId: s.id.toString(), phase: Phase[s.match.phase], yourSide: side === 0 ? "A" : side === 1 ? "B" : "spectator", status: sm.status, summary: sm.line,
+      board: v.ascii, yourPieces: v.mine, enemyPieces: v.enemy,
+      legalMoves: v.moves.map((m) => ({ from: m.from, to: m.to, piece: l ? RANK_NAMES[l.ranks[m.pieceIndex]] : undefined, attack: m.attack })),
+      watch: watchLink(this.env, s.id),
+    };
+  }
+
+  async state(idStr: string) {
+    return this.lock.run(async () => {
+      const c = cfg(this.env), id = BigInt(idStr), address = await this.address();
+      const s0 = await readState(c.rpcUrl, c.game, id);
+      if (s0.match.phase === Phase.None) throw new UserError(`match #${id} does not exist`);
+      const side = sideOf(s0, address), l = await this.layout(id);
+      const s = s0, txs: SentTx[] = [], events: string[] = []; // read-only: no transactions here
+      if (side >= 0 && s.match.players.some((p) => p.toLowerCase() === this.houseAddress().toLowerCase()) && s.match.phase < Phase.Settled) await this.kickHouse(id);
+      return { txs: txs.map(out), events, ...(await this.render(s, side, l)) };
+    });
+  }
+
+  async resign(idStr: string) {
+    return this.lock.run(async () => {
+      const c = cfg(this.env), id = BigInt(idStr);
+      const t = await this.tx("resign", gameCall("resign", [id]));
+      const s = await readState(c.rpcUrl, c.game, id, t.receipt.blockNumber);
+      await this.kickHouse(id);
+      return { txs: [out(t)], ...(await this.render(s, sideOf(s, await this.address()), await this.layout(id))) };
+    });
+  }
+
+  /** Called by the house bot when this player won and has not verified yet. */
+  async autoSettle(idStr: string) {
+    return this.lock.run(async () => {
+      const c = cfg(this.env), id = BigInt(idStr), l = await this.layout(id);
+      if (!l) return { ok: false };
+      const s = await readState(c.rpcUrl, c.game, id), side = sideOf(s, await this.address());
+      if (s.match.phase !== Phase.Ended || s.match.winner !== side || s.match.verified[side]) return { ok: false };
+      const t = await this.tx("verifyLayout", gameCall("verifyLayout", [id, l.ranks, l.salts]));
+      return { ok: true, hash: t.hash };
+    });
+  }
+}
+
+function note(t: SentTx, fallback: string) { return combatNote(t.receipt, RANK_NAMES) || fallback; }
+
+const ERRORS: Record<string, string> = {
+  WrongPhase: "wrong phase for that action", NotYourTurn: "not your turn", NotPlayer: "you are not allowed in that match",
+  BadSquare: "bad square", BadMove: "illegal move", Immobile: "that piece cannot move", BadTimeout: "turn timer must be 60..604800 seconds",
+  NotExpired: "the turn timer has not expired", BadLayout: "illegal army", BadReveal: "reveal did not match the commitment", WrongChain: "wrong chain",
+};
+function explain(msg: string) {
+  for (const [k, v] of Object.entries(ERRORS)) if (msg.includes(k)) return `${v} (${k})`;
+  return msg.split("\n")[0].slice(0, 240);
+}
