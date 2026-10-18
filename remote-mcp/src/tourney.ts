@@ -46,7 +46,7 @@ export class Tourney extends DurableObject<Env> {
     const cur = await this.ensureWeekly();
     const t = id ? await this.load(id) : cur;
     const all = await Promise.all((await this.index()).slice(-12).reverse().map((i) => this.load(i)));
-    return { tournament: t, list: all.filter(Boolean).map((x) => ({ id: x!.id, name: x!.name, kind: x!.kind, status: x!.status, startsAt: x!.startsAt, entrants: x!.entrants.filter((e) => !e.bot).length, champion: x!.champion !== undefined ? displayName(x!.entrants[x!.champion]) : undefined })) };
+    return { tournament: t, list: all.filter((x) => x && (x.kind === "weekly" || x.id === id)).map((x) => ({ id: x!.id, name: x!.name, kind: x!.kind, status: x!.status, startsAt: x!.startsAt, entrants: x!.entrants.filter((e) => !e.bot).length, champion: x!.champion !== undefined ? displayName(x!.entrants[x!.champion]) : undefined })) };
   }
 
   async signup(who: { address: string; objectId: string; name?: string; client: string }, id?: string) {
