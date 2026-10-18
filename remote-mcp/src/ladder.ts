@@ -56,7 +56,7 @@ export class Ladder extends DurableObject<Env> {
     const m: any = await pub(c.rpcUrl).readContract({ address: c.game, abi: foglineAbi, functionName: "getMatch", args: [BigInt(id)] });
     const phase = Number(m.phase), reason = Number(m.reason), winner = Number(m.winner);
     if (phase === NONE) return { rated: false, reason: "no such match" };
-    if (phase !== SETTLED) { await this.track(id); return { rated: false, reason: "not settled yet" }; }
+    if (phase !== SETTLED) { await this.track(id, 15_000); return { rated: false, reason: "not settled yet" }; }
     if (!COUNTED.has(reason)) { await this.ctx.storage.put(`m:${id}`, { skipped: reason }); await this.untrack(id); return { rated: false, reason: "not a played game" }; }
     const [a, b] = [await this.entry(await this.seat(m.players[0], id)), await this.entry(await this.seat(m.players[1], id))];
     if (a.address === b.address) { await this.ctx.storage.put(`m:${id}`, { skipped: "self" }); await this.untrack(id); return { rated: false, reason: "self-play" }; }
@@ -75,7 +75,7 @@ export class Ladder extends DurableObject<Env> {
     await this.ctx.storage.put("recent", recent);
     return { rated: true };
   }
-  private async track(id: string) { const s = new Set((await this.ctx.storage.get<string[]>("open")) ?? []); if (!s.has(id)) { s.add(id); await this.ctx.storage.put("open", [...s].slice(-200)); } await this.arm(); }
+  private async track(id: string, soon = 60_000) { const s = new Set((await this.ctx.storage.get<string[]>("open")) ?? []); if (!s.has(id)) { s.add(id); await this.ctx.storage.put("open", [...s].slice(-200)); } await this.arm(soon); }
   private async untrack(id: string) { const s = (await this.ctx.storage.get<string[]>("open")) ?? []; if (s.includes(id)) await this.ctx.storage.put("open", s.filter((x) => x !== id)); }
   private async arm(ms = 60_000) { const cur = await this.ctx.storage.getAlarm(); if (!cur || cur > Date.now() + ms) await this.ctx.storage.setAlarm(Date.now() + ms); }
 
@@ -117,4 +117,6 @@ export class Ladder extends DurableObject<Env> {
     return { players: all.slice(0, limit), total: all.length, scanned: ((await this.ctx.storage.get<number>("scan")) ?? 1) - 1, recent: ((await this.ctx.storage.get<any[]>("recent")) ?? []).slice(-10).reverse() };
   }
   async get(address: string) { return this.entry(address); }
+  /** Highest match id the scanner has seen. */
+  async latest() { await this.migrate(); return ((await this.ctx.storage.get<number>("scan")) ?? 2) - 1; }
 }

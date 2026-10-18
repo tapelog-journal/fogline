@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fogline cosmetics shop · TapeLog</title>
+<meta name="description" content="Preview every Fogline cosmetic on a live board before you buy it with valueless test fUSD, then equip it. Decorative only. Base Sepolia testnet. Game for entertainment. Testnet only.">
+<meta property="og:title" content="Fogline cosmetics shop · TapeLog"><meta property="og:description" content="22 decorative skins, tabletops, fog styles, trails, effects and banners, previewed on a live board. Test fUSD only.">
+<style>
+  :root { --bg:#0b0b0b; --fg:#f4f4f4; --acc:#ffd400; --mut:#8a8a8a; }
+  * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif }
+  a { color:var(--acc) }
+  header { padding:14px 24px; border-bottom:1px solid #222; display:flex; gap:16px; align-items:baseline; flex-wrap:wrap }
+  h1 { margin:0; font-size:24px } h1 span { color:var(--acc) } .tag { color:var(--mut) }
+  nav { display:flex; gap:6px; margin-left:auto } nav a { text-decoration:none; color:var(--fg); border:1px solid #333; border-radius:6px; padding:4px 12px } nav a.on { border-color:var(--acc); color:var(--acc) } nav a.playbtn { background:var(--acc); color:#111; font-weight:700; border-color:var(--acc) }
+  main { display:grid; grid-template-columns:minmax(320px,560px) minmax(320px,1fr); gap:24px; padding:20px 24px; max-width:1360px }
+  @media (max-width:980px){ main { grid-template-columns:1fr } }
+  .panel { background:#121212; border:1px solid #222; border-radius:10px; padding:14px 16px; margin-bottom:14px }
+  .panel h2 { margin:0 0 8px; font-size:16px; color:var(--acc) }
+  input,button,select { background:#1b1b1b; color:var(--fg); border:1px solid #333; border-radius:6px; padding:7px 10px; font:inherit }
+  button { cursor:pointer } button:hover:not(:disabled) { border-color:var(--acc) } button:disabled { opacity:.5; cursor:wait }
+  button.big { background:var(--acc); color:#111; font-weight:700; border-color:var(--acc) }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0 }
+  #previewBox { position:sticky; top:12px }
+  #preview { width:100%; aspect-ratio:800/950; border-radius:12px; background:#151515; display:block; object-fit:contain; box-shadow:0 10px 40px rgba(0,0,0,.6); transition:opacity .2s }
+  #preview.loading { opacity:.45 }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px } .tabs button.on { border-color:var(--acc); color:var(--acc) }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:10px }
+  .card { background:#151515; border:1px solid #262626; border-radius:10px; padding:10px; cursor:pointer; position:relative; display:flex; flex-direction:column; gap:4px }
+  .card:hover { border-color:#555 } .card.sel { border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) inset }
+  .thumb { height:64px; display:flex; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; background:#0e0e0e center/cover no-repeat }
+  .thumb svg { width:56px; height:56px }
+  .card b { font-size:13.5px; line-height:1.25 } .card .meta { font-size:12px; color:var(--mut) }
+  .badge { position:absolute; top:6px; right:6px; font-size:11px; padding:1px 6px; border-radius:10px; background:#1f3b2a; color:#7ee2a8 }
+  .badge.eq { background:#3b3415; color:var(--acc) }
+  #status { font-size:16px; font-weight:650 } #sub { color:var(--mut); font-size:13px } .ok { color:#7ee2a8 } .warn { color:#ff9a6b }
+  .busy::before { content:""; display:inline-block; width:12px; height:12px; margin-right:8px; border:2px solid var(--acc); border-top-color:transparent; border-radius:50%; animation:spin .8s linear infinite; vertical-align:-1px }
+  @keyframes spin { to { transform:rotate(360deg) } }
+  .hidden { display:none !important }
+  footer { padding:16px 24px; color:var(--mut); border-top:1px solid #222; font-size:13px }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Fogline</span> by TapeLog</h1>
+  <div class="tag">Cosmetics shop: decorative only, paid with valueless test fUSD.</div>
+  <nav><a href="./">Watch</a><a href="./play.html" class="playbtn">▶ Play</a><a href="./ladder.html">Ladder</a><a href="./shop.html" class="on">Shop</a></nav>
+</header>
+<main>
+  <section id="previewBox">
+    <img id="preview" alt="Live board preview">
+    <div class="panel" style="margin-top:14px">
+      <div id="status">Pick an item to preview it</div>
+      <div id="sub">The picture is a real match happening now (spectator view: hidden pieces stay hidden) drawn with the item applied, exactly like the board pictures players get.</div>
+      <div class="row">
+        <button id="buy" class="big hidden">Buy</button><button id="equip" class="hidden">Equip</button><button id="unequip" class="hidden">Unequip</button>
+        <label class="tag"><input type="checkbox" id="compare"> compare with the default look</label>
+      </div>
+      <div id="txs" class="tag"></div>
+    </div>
+  </section>
+  <section>
+    <div class="panel">
+      <h2>Your test wallet</h2>
+      <div id="noSession">
+        <div class="row"><span>No player on this device yet.</span><button id="newPlayer" class="big">Get a free test player</button></div>
+        <div class="tag">Same player as the <a href="./play.html">Play</a> page. It comes with 1000 fUSD test tokens. The session stays in this browser only.</div>
+      </div>
+      <div id="haveSession" class="hidden"><div class="row" id="wallet">…</div></div>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div id="grid"></div>
+    <div class="panel" style="margin-top:14px">
+      <h2>How it works</h2>
+      <div class="tag">Items are ERC-1155 tokens on Base Sepolia testnet, bought with fUSD, a valueless test token from the faucet. They change only how your board looks to you, your opponent and spectators: piece skins, fog styles and trails sit in the <b>pieces</b> slot, tabletops, effects and banners in the <b>board</b> slot. When a slot is empty your best owned item in each category is used. Zero gameplay effect. Agents can do the same with <code>cosmetics</code>, <code>buy-cosmetic</code> and <code>equip-cosmetic</code> (see <a href="https://fogline-mcp.tapelog.workers.dev/skill.md">skill.md</a>).</div>
+    </div>
+  </section>
+</main>
+<footer>Fogline is an original, open-source TapeLog project. Cosmetics are decorative only and use a valueless test token. Real-money purchases and wagering are disabled. <b>Game for entertainment. Testnet only.</b> Not investment advice.</footer>
+<script type="module">
+import * as A from "./art/art.js";
+import { CATALOG, CATEGORY_NAMES, RARITY_COLORS } from "./art/catalog.js";
+const $ = (id) => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const API = q.get("api") || "https://fogline-mcp.tapelog.workers.dev";
+const K = { session: "fogline.session" };
+const sess = () => localStorage.getItem(K.session);
+let tab = q.get("cat") || "all", sel = Number(q.get("item")) || 6, owned = new Set(), equipped = [0, 0], fusd = null, busy = false, liveMatch = null;
+
+async function call(action, params = {}) {
+  const r = await fetch(`${API}/api/${action}`, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ ...params, session: sess() ?? undefined }) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || "request failed");
+  return j;
+}
+async function act(msg, fn) {
+  if (busy) return; busy = true;
+  document.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  $("sub").textContent = msg; $("sub").className = "busy";
+  try { await fn(); $("sub").className = "ok"; }
+  catch (e) { $("sub").textContent = e.message; $("sub").className = "warn"; }
+  finally { busy = false; document.querySelectorAll("button").forEach((b) => (b.disabled = false)); }
+}
+
+function thumb(it) {
+  switch (it.category) {
+    case "skin": return `${A.pieceSVG({ skin: it.id, rank: 7, side: 0 })}${A.pieceSVG({ skin: it.id, rank: 0, side: 1 })}`;
+    case "fog": return `${A.pieceSVG({ fog: it.id, rank: null, side: 0 })}${A.pieceSVG({ fog: it.id, rank: null, side: 1 })}`;
+    case "table": return "";
+    case "effect": return `<span style="font-size:30px">${{ 13: "💥", 14: "🔄", 15: "🧨", 16: "🏆" }[it.id]}</span>`;
+    case "trail": return `<div style="width:80%;height:8px;border-radius:6px;background:${it.id === 17 ? "linear-gradient(90deg,transparent,#ff8a1f,#ffd36b)" : "linear-gradient(90deg,transparent,#18f0ff,#fff)"};box-shadow:0 0 12px ${it.id === 17 ? "#ff8a1f" : "#18f0ff"}"></div>`;
+    case "banner": return `<div style="transform:scale(.28);transform-origin:center">${A.BANNERS[it.id].html("Victory", "Beacon captured")}</div>`;
+  }
+  return "";
+}
+function renderTabs() {
+  const cats = ["all", ...Object.keys(CATEGORY_NAMES)];
+  $("tabs").innerHTML = cats.map((c) => `<button data-c="${c}" class="${c === tab ? "on" : ""}">${c === "all" ? "All 22" : CATEGORY_NAMES[c]}</button>`).join("") + `<button data-c="owned" class="${tab === "owned" ? "on" : ""}">Owned (${owned.size})</button>`;
+  $("tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => { tab = b.dataset.c; renderTabs(); renderGrid(); }));
+}
+function renderGrid() {
+  const items = CATALOG.filter((i) => tab === "all" || (tab === "owned" ? owned.has(i.id) : i.category === tab));
+  $("grid").innerHTML = items.map((it) => `<div class="card${it.id === sel ? " sel" : ""}" data-id="${it.id}">
+    ${owned.has(it.id) ? `<span class="badge${equipped.includes(it.id) ? " eq" : ""}">${equipped.includes(it.id) ? "equipped" : "owned"}</span>` : ""}
+    <div class="thumb" style="${it.category === "table" ? `background-image:url('${A.envURL(it.id)}')` : ""}">${thumb(it)}</div>
+    <b>${it.name}</b><span class="meta"><span style="color:${RARITY_COLORS[it.rarity]}">${it.rarity}</span> · ${CATEGORY_NAMES[it.category].replace(/s$/, "")} · ${it.price} fUSD</span></div>`).join("") || `<div class="tag">Nothing here yet.</div>`;
+  $("grid").querySelectorAll(".card").forEach((c) => (c.onclick = () => select(+c.dataset.id)));
+}
+let previewSeq = 0;
+async function loadPreview() {
+  const id = $("compare").checked ? 0 : sel, n = ++previewSeq;
+  $("preview").classList.add("loading");
+  try {
+    const r = await fetch(`${API}/api/shop/preview.png?item=${id}${liveMatch ? `&match=${liveMatch}` : ""}`);
+    if (!r.ok) throw new Error(await r.text());
+    liveMatch = liveMatch || r.headers.get("x-fogline-preview-match");
+    const url = URL.createObjectURL(await r.blob());
+    if (n !== previewSeq) return;
+    const old = $("preview").src; $("preview").src = url; if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+  } catch (e) { $("sub").textContent = "Preview unavailable: " + e.message; $("sub").className = "warn"; }
+  finally { if (n === previewSeq) $("preview").classList.remove("loading"); }
+}
+function select(id) {
+  sel = id; const it = CATALOG.find((i) => i.id === id);
+  history.replaceState(null, "", `?item=${id}${tab !== "all" ? `&cat=${tab}` : ""}`);
+  renderGrid(); renderActions(); loadPreview();
+  $("status").innerHTML = `${it.name} <span class="tag" style="font-weight:400">· <span style="color:${RARITY_COLORS[it.rarity]}">${it.rarity}</span> · ${it.price} fUSD${it.max ? ` · limited to ${it.max}` : ""}</span>`;
+  $("sub").className = ""; $("sub").textContent = `${it.desc} ${["effect", "trail", "banner"].includes(it.category) ? "The preview stages a sample moment on the live board so you can see it." : ""} Preview: ${liveMatch ? `match #${liveMatch}` : "a live match"}, spectator view.`;
+}
+function renderActions() {
+  const it = CATALOG.find((i) => i.id === sel), have = owned.has(sel), on = equipped[it.kind] === sel, s = !!sess();
+  $("buy").classList.toggle("hidden", have); $("buy").textContent = s ? `Buy for ${it.price} test fUSD` : "Get a free test player to buy";
+  $("equip").classList.toggle("hidden", !have || on); $("unequip").classList.toggle("hidden", !have || !on);
+}
+async function refreshWallet() {
+  if (!sess()) { $("noSession").classList.remove("hidden"); $("haveSession").classList.add("hidden"); return; }
+  $("noSession").classList.add("hidden"); $("haveSession").classList.remove("hidden");
+  try {
+    const r = await call("cosmetics");
+    owned = new Set(r.owned); equipped = r.equipped; fusd = r.fUSD;
+    $("wallet").innerHTML = `<span><b>${Number(fusd).toLocaleString()}</b> test fUSD · ${owned.size} of 22 owned · pieces slot: <b>${name(equipped[0])}</b> · board slot: <b>${name(equipped[1])}</b></span>`;
+  } catch (e) { $("wallet").innerHTML = `<span class="warn">${e.message}</span>`; }
+  renderTabs(); renderGrid(); renderActions();
+}
+const name = (id) => (id ? CATALOG.find((i) => i.id === id)?.name ?? `#${id}` : "default");
+const txLinks = (txs) => (txs?.length ? txs.map((u) => `<a href="${u}" target="_blank" rel="noopener">tx</a>`).join(" ") : "");
+
+$("compare").onchange = loadPreview;
+$("newPlayer").onclick = () => act("Creating your free test player (testnet ETH for gas + 1000 fUSD)…", async () => {
+  const r = await call("new-player", { client: "browser" });
+  localStorage.setItem(K.session, r.session);
+  $("sub").textContent = r.funded ? "Your test player is ready." : r.fundingNote; await refreshWallet();
+});
+$("buy").onclick = () => {
+  if (!sess()) { $("newPlayer").click(); return; }
+  const it = CATALOG.find((i) => i.id === sel);
+  act(`Buying ${it.name} with test fUSD (a few testnet transactions)…`, async () => {
+    const r = await call("buy-cosmetic", { item: sel });
+    $("txs").innerHTML = txLinks(r.txs); $("sub").textContent = r.text; await refreshWallet();
+  });
+};
+$("equip").onclick = () => act("Equipping…", async () => { const r = await call("equip-cosmetic", { item: sel }); $("txs").innerHTML = txLinks(r.txs); $("sub").textContent = r.text; await refreshWallet(); });
+$("unequip").onclick = () => act("Clearing the slot…", async () => {
+  const it = CATALOG.find((i) => i.id === sel);
+  const r = await call("equip-cosmetic", { item: "none", slot: it.kind === 0 ? "pieces" : "board" }); $("txs").innerHTML = txLinks(r.txs); $("sub").textContent = r.text; await refreshWallet();
+});
+
+renderTabs(); renderGrid(); select(sel); refreshWallet();
+</script>
+</body>
+</html>

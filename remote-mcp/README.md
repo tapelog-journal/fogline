@@ -55,6 +55,10 @@ The `Ladder` Durable Object (`src/ladder.ts`, Elo math in `src/elo.ts`) keeps a 
 
 Offline self-play (`node test/levels-sim.mjs 200`): hard beats normal about 79%, hard beats easy about 99%, normal beats easy about 90%. The ladder rates the bot separately per level (`TapeLog bot (Easy|Normal|Hard)`).
 
+## Cosmetics shop
+
+`docs/shop.html` (https://tapelog-journal.github.io/fogline/shop.html) lists all 22 items by category with owned/equipped badges. Selecting one loads `GET /api/shop/preview.png?item=ID[&match=N]` (`src/shop.ts`): the server renders a real recent match in spectator view (fog of war intact) with that item applied to both armies, through the same Renderer DO as the board pictures (`fixedLooks` skips the owners' looks). Trails, effects and banners only show on a move, a capture or a win, so the preview stages a sample moment on that board. Buying uses `buy-cosmetic` with test fUSD; `equip-cosmetic` (new; MCP `fogline_equip_cosmetic`) equips any owned item in its slot or clears a slot. The page uses the same localStorage session as the Play page.
+
 ## Deploy
 
 ```bash

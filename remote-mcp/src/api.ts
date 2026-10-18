@@ -10,7 +10,7 @@ import { RANK_NAMES } from "../../agent/src/rules";
 import { Phase } from "../../agent/src/rules";
 import { LEVEL_LABEL, parseLevel } from "../../agent/src/levels";
 
-const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board", "ladder", "set-name"] as const;
+const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board", "ladder", "set-name", "equip-cosmetic"] as const;
 type Action = (typeof ACTIONS)[number];
 
 // Link-preview and index crawlers must never trigger actions. User-initiated agent fetchers
@@ -101,8 +101,8 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
         const owned = new Set(r.owned);
         const lines = r.items.map((i: any) => `#${i.id} ${i.name} (${i.category}, ${i.rarity}, ${i.price} fUSD)${owned.has(i.id) ? " ✅ owned" : ""}${r.equipped.includes(i.id) ? " · equipped" : ""}`);
         return reply(p, { ok: true, owned: r.owned, equipped: r.equipped, fUSD: r.fUSD, items: lines,
-          text: `Decorative cosmetics (zero gameplay effect), paid with valueless TEST fUSD on Base Sepolia. You have ${r.fUSD} fUSD and own ${r.owned.length}. Owned skins, tabletops, fog styles, trails, effects and banners appear in your board pictures. Buy one: ${origin}/api/buy-cosmetic?session=${session}&item=<id>`,
-          catalog: "https://tapelog-journal.github.io/fogline/#cosmetics", next: { buy: `${origin}/api/buy-cosmetic?session=${session}&item=6` } }, () => `### Fogline cosmetics (test fUSD, decorative only)\n\nYou have **${r.fUSD} fUSD**. Owned items show up in your board picture.\n\n` + lines.map((l: string, k: number) => `- [${l}](${origin}/api/buy-cosmetic?session=${session}&item=${r.items[k].id})`).join("\n") + `\n\n_${DISCLAIMER}_`);
+          text: `Decorative cosmetics (zero gameplay effect), paid with valueless TEST fUSD on Base Sepolia. You have ${r.fUSD} fUSD and own ${r.owned.length}. Owned skins, tabletops, fog styles, trails, effects and banners appear in your board pictures. Buy one: ${origin}/api/buy-cosmetic?session=${session}&item=<id> . Switch what's shown: ${origin}/api/equip-cosmetic?session=${session}&item=<owned id> . Live previews: https://tapelog-journal.github.io/fogline/shop.html`,
+          catalog: "https://tapelog-journal.github.io/fogline/shop.html", preview: `${origin}/api/shop/preview.png?item=6`, next: { buy: `${origin}/api/buy-cosmetic?session=${session}&item=6` } }, () => `### Fogline cosmetics (test fUSD, decorative only)\n\nYou have **${r.fUSD} fUSD**. Owned items show up in your board picture.\n\n` + lines.map((l: string, k: number) => `- [${l}](${origin}/api/buy-cosmetic?session=${session}&item=${r.items[k].id})`).join("\n") + `\n\n_${DISCLAIMER}_`);
       }
       case "buy-cosmetic": {
         const item = String(p.item ?? p.id ?? "");
@@ -110,6 +110,15 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
         const r = await pl.buyCosmetic(item);
         return reply(p, { ok: true, item: r.item.name, alreadyOwned: r.alreadyOwned, equipped: r.equipped, txs: r.txs.map((t: any) => t.url),
           text: `${r.alreadyOwned ? "Already owned" : "Bought"} ${r.item.name} with test fUSD${r.equipped ? " and equipped it" : ""}. It now shows in your board pictures. Decorative only.`, next: { cosmetics: `${origin}/api/cosmetics?session=${session}` } });
+      }
+      case "equip-cosmetic": {
+        const item = String(p.item ?? p.id ?? "");
+        if (!item) throw new Error("add &item=<owned item id 1-22>, or &item=none&slot=pieces|board to go back to the default look");
+        const slot = p.slot === undefined ? undefined : /^(0|pieces?|skin)$/i.test(String(p.slot)) ? 0 : /^(1|board|table)$/i.test(String(p.slot)) ? 1 : -1;
+        const r = await pl.equipCosmetic(item, slot);
+        const slotName = r.slot === 0 ? "pieces" : "board";
+        return reply(p, { ok: true, item: r.item?.name ?? null, slot: slotName, already: r.already, txs: r.txs.map((t: any) => t.url),
+          text: r.item ? `${r.already ? "Already equipped" : "Equipped"} ${r.item.name} (${slotName} slot). Board pictures use it from now on. Decorative only.` : `Cleared the ${slotName} slot (best owned items are used, or the default look).`, next: { cosmetics: `${origin}/api/cosmetics?session=${session}` } });
       }
       case "wallet": { const r = await pl.info(); return reply(p, { ok: true, ...r, text: `wallet ${r.address}: ${r.eth} test ETH, ${r.fUSD} fUSD; matches: ${r.matches.join(", ") || "none"}` }); }
       case "play-bot": {

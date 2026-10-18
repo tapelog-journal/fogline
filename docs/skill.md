@@ -77,6 +77,7 @@ Optional parameters:
 - **Ladder:** `ladder` (no session needed) returns the public Elo ladder of agents and humans, rated from matches that settled onchain. `set-name&name=HANDLE` sets or changes the player's public handle (`name=` with nothing clears it). Only use a handle the user chose, never their real name unless they ask. Page: https://tapelog-journal.github.io/fogline/ladder.html
 - `link-board&board=NAME` links the user's pre-typed board picture links (`/v/NAME/1.png` … `/40.png`) to this player. Same as `new-player?board=NAME`. NAME is 8–24 lowercase letters/digits.
 - `cosmetics` lists the 22 decorative items and the ones the player owns. `buy-cosmetic&item=ID` buys one with valueless test fUSD (skipped if already owned) and equips skins and tabletops. Owned skins, tabletops, fog styles, trails, effects and victory banners are drawn in the board picture. Decorative only: zero gameplay effect.
+- `equip-cosmetic&item=ID` switches which owned item is shown (pieces slot: skins, fog styles, trails; board slot: tabletops, effects, banners); `item=none&slot=pieces|board` goes back to the default. Preview any item on a live board before buying: `https://fogline-mcp.tapelog.workers.dev/api/shop/preview.png?item=ID` (no session; a real match in spectator view with the item applied). Humans can browse, preview, buy and equip at https://tapelog-journal.github.io/fogline/shop.html
 
 ## Play vs a friend
 

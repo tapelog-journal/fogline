@@ -211,7 +211,19 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   }, async ({ session }) => {
     try {
       const r = await player(session).cosmetics(), owned = new Set(r.owned);
-      return text(`Fogline cosmetics: decorative only, paid with valueless TEST fUSD (you have ${r.fUSD}).\n` + ITEMS.map((i) => `#${i.id} ${i.name} · ${i.category} · ${i.rarity} · ${i.price} fUSD${owned.has(i.id) ? " · OWNED" : ""}${r.equipped.includes(i.id) ? " (equipped)" : ""}`).join("\n") + "\n\nBuy with fogline_buy_cosmetic. Gallery: https://tapelog-journal.github.io/fogline/#cosmetics");
+      return text(`Fogline cosmetics: decorative only, paid with valueless TEST fUSD (you have ${r.fUSD}).\n` + ITEMS.map((i) => `#${i.id} ${i.name} · ${i.category} · ${i.rarity} · ${i.price} fUSD${owned.has(i.id) ? " · OWNED" : ""}${r.equipped.includes(i.id) ? " (equipped)" : ""}`).join("\n") + "\n\nBuy with fogline_buy_cosmetic. Shop with live board previews: https://tapelog-journal.github.io/fogline/shop.html");
+    } catch (e) { return err(e); }
+  });
+
+  server.registerTool("fogline_equip_cosmetic", {
+    title: "Equip a Fogline cosmetic",
+    description: "Use this when the user wants to switch which owned decorative item shows in their board pictures. Item id 1-22 they own, or item 'none' with slot 'pieces' or 'board' to go back to the default look. Decorative only. Shop with live previews: https://tapelog-journal.github.io/fogline/shop.html",
+    inputSchema: { session: sessionArg, item: z.union([z.number().int().min(0).max(22), z.string()]).describe("Owned item id 1-22 or name, or 'none' to clear a slot."), slot: z.enum(["pieces", "board"]).optional().describe("Only with item 'none'.") },
+    annotations: WR,
+  }, async ({ session, item, slot }) => {
+    try {
+      const r = await player(session).equipCosmetic(String(item), slot === "pieces" ? 0 : slot === "board" ? 1 : undefined);
+      return text(r.item ? `${r.already ? "Already equipped" : "Equipped"} ${r.item.name}.` : "Slot cleared.");
     } catch (e) { return err(e); }
   });
 

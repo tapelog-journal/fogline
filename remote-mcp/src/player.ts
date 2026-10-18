@@ -389,6 +389,24 @@ export class Player extends DurableObject<Env> {
     });
   }
 
+  /** Equip an owned item in its slot (pieces: skins, fog styles, trails; board: tabletops, effects, banners), or clear a slot. */
+  async equipCosmetic(q: string, slot?: number) {
+    return this.lock.run(async () => {
+      const c = cfg(this.env), address = await this.address();
+      const none = /^(0|none|default)$/i.test(q.trim());
+      const it = none ? undefined : findItem(q);
+      if (!none && !it) throw new UserError(`unknown cosmetic "${q}". Use the item id (1-22) or name.`);
+      const kind = it ? it.kind : slot;
+      if (kind !== 0 && kind !== 1) throw new UserError("to clear a slot pass slot=pieces or slot=board");
+      const o = await ownedBy(c.rpcUrl, c.cosmetics, address);
+      if (it && !o.owned.includes(it.id)) throw new UserError(`you don't own ${it.name} yet; buy it first (buy-cosmetic&item=${it.id})`);
+      const id = it ? it.id : 0;
+      if (o.equipped[kind] === id) return { item: it, slot: kind, txs: [], already: true };
+      const t = await this.tx("equip", cosmeticsCall("equip", [kind, BigInt(id)]), c.cosmetics);
+      return { item: it, slot: kind, txs: [out(t)], already: false };
+    });
+  }
+
   /** Called by the house bot when it attacked one of this player's pieces and the defender must be revealed. */
   async autoReveal(idStr: string) {
     return this.lock.run(async () => {

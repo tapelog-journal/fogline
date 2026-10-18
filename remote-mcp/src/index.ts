@@ -7,6 +7,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { buildServer, houseAddress, VERSION } from "./tools";
 import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, type Env } from "./env";
 import { handleApi, ROBOTS } from "./api";
+import { handleShopPreview } from "./shop";
 import { chatgptPrompt, handleAliasImage, handleBoardImage, handleBoardPage } from "./boardimg";
 // @ts-ignore text module (wrangler rule)
 import SKILL from "../skill.md";
@@ -49,6 +50,7 @@ export default {
       try { return new Response(JSON.stringify(await env.RENDER.get(env.RENDER.idFromName("history")).history(hist[1])), { headers: H }); }
       catch (e: any) { return new Response(JSON.stringify({ ok: false, error: String(e?.message ?? e).slice(0, 200) }), { status: 200, headers: H }); }
     }
+    if (url.pathname === "/api/shop/preview.png") return handleShopPreview(req, env);
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return handleApi(req, env, ip, ctx);
     if (url.pathname === "/skill.md" || url.pathname === "/SKILL.md") return new Response(SKILL as string, { headers: { "content-type": "text/markdown; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
     if (url.pathname === "/llms.txt") return new Response(LLMS as string, { headers: { "content-type": "text/plain; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });

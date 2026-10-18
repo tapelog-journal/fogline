@@ -11,7 +11,7 @@ import { b64, svgToPng } from "./png";
 import { sha256Hex } from "./store";
 import { GAME_DEPLOY_BLOCK, head, loadHistory, scanCreated, type History } from "./history";
 
-export interface RenderReq { scene: BoardScene; players: [string, string]; block: string; width?: number }
+export interface RenderReq { scene: BoardScene; players: [string, string]; block: string; width?: number; /** shop previews: keep scene.looks / scene.last as given */ fixedLooks?: boolean }
 const MAX_CACHED = 400;
 const RENDER_VERSION = "r3|"; // bump when the drawing changes
 
@@ -45,10 +45,11 @@ export class Renderer extends DurableObject<Env> {
   /** Returns the PNG and a content hash (stable for identical pictures). */
   async png(req: RenderReq): Promise<{ png: Uint8Array; hash: string; cached: boolean }> {
     const c = cfg(this.env), sc = req.scene;
+    const fixed = !!req.fixedLooks;
     const [l0, l1, last] = await Promise.all([
-      req.players[0] && !/^0x0{40}$/i.test(req.players[0]) ? this.lookOf(req.players[0]) : undefined,
-      req.players[1] && !/^0x0{40}$/i.test(req.players[1]) ? this.lookOf(req.players[1]) : undefined,
-      sc.ply > 0 ? lastActions(c.rpcUrl, c.game, BigInt(sc.matchId), BigInt(req.block)) : [],
+      !fixed && req.players[0] && !/^0x0{40}$/i.test(req.players[0]) ? this.lookOf(req.players[0]) : undefined,
+      !fixed && req.players[1] && !/^0x0{40}$/i.test(req.players[1]) ? this.lookOf(req.players[1]) : undefined,
+      sc.ply > 0 && !(fixed && sc.last) ? lastActions(c.rpcUrl, c.game, BigInt(sc.matchId), BigInt(req.block)) : [],
     ]);
     if (l0) sc.looks[0] = l0;
     if (l1) sc.looks[1] = l1;
@@ -57,7 +58,7 @@ export class Renderer extends DurableObject<Env> {
     const house = privateKeyToAccount(this.env.HOUSE_KEY as Hex).address.toLowerCase();
     sc.names = req.players.map((a) => (!a || /^0x0{40}$/i.test(a) ? "" : a.toLowerCase() === house ? "TapeLog bot" : `${a.slice(0, 6)}…${a.slice(-4)}`)) as [string, string];
     // the picture is a pure function of the scene, so cache by a hash of the scene itself
-    const hash = (await sha256Hex(RENDER_VERSION + (req.width ?? "") + JSON.stringify(sc))).slice(0, 32);
+    const hash = (await sha256Hex(RENDER_VERSION + (req.width ?? "") + (fixed ? "fixed|" : "") + JSON.stringify(sc))).slice(0, 32);
     const key = `png:${hash}`;
     const hit = await this.ctx.storage.get<Uint8Array>(key);
     if (hit) return { png: hit, hash, cached: true };
