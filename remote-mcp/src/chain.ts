@@ -149,7 +149,8 @@ export async function narrate(rpc: string, game: Address, id: bigint, fromBlock:
     if (toBlock < fromBlock) return { lines: [] };
     if (toBlock - fromBlock > 5000n) fromBlock = toBlock - 5000n;
     const logs = await pub(rpc).getLogs({ address: game, fromBlock, toBlock, topics: [null, `0x${id.toString(16).padStart(64, "0")}` as Hex] } as any);
-    const ev = parseEventLogs({ abi: foglineAbi, logs: logs as any });
+    // some RPCs ignore the topic filter: always filter by match id ourselves
+    const ev = (parseEventLogs({ abi: foglineAbi, logs: logs as any }) as any[]).filter((e) => e.args?.id === id);
     const who = (s: number) => (s === side ? "You" : "Opponent");
     const whose = (pid: number) => (Math.floor(pid / 16) === side ? "your" : "their");
     const OUT = ["attacker wins", "defender holds", "both removed"];
