@@ -36,10 +36,10 @@ export function registerWidget(server: McpServer, origin: string) {
       mimeType: WIDGET_MIME,
       text: widgetHtml(origin),
       _meta: {
-        ui: { prefersBorder: false, csp: { connectDomains: [origin], resourceDomains: [origin] } },
+        ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [origin] } },
         "openai/widgetDescription": "Shows the user's Fogline board and lets them move by tapping. The board already shows the state, so do not repeat the board as text; summarize what happened in one or two sentences.",
         "openai/widgetPrefersBorder": false,
-        "openai/widgetCSP": { connect_domains: [origin], resource_domains: [origin] },
+        "openai/widgetCSP": { connect_domains: [], resource_domains: [origin] },
       },
     }],
   }));

@@ -11,8 +11,11 @@ OpenAI Apps SDK / open MCP Apps standard. Game for entertainment. Base Sepolia t
 - **Tap to move:** tap one of your pieces, then a highlighted square. The widget calls `fogline_move` through the
   MCP Apps bridge (`tools/call`), falling back to `window.openai.callTool`. It then tells the model what happened
   through `ui/update-model-context`.
-- **Read-only plans:** if the host refuses a write tool, the widget sends that one tap to the
-  public Fogline HTTP API (declared in the widget CSP) and reloads itself with the read-only `fogline_state` tool.
+- **Plans without app write actions:** moves are write actions. If ChatGPT refuses one (OpenAI documents full
+  write support for Business, Enterprise and Edu; Plus/Pro may be read-only), the board does not work around it. It
+  shows a message that moves need a plan with app write actions, plus a **Play this match in your browser** link to
+  https://tapelog-journal.github.io/fogline/play.html. The board itself still loads via the read-only `fogline_state`,
+  and chat play through the skill.md GET links (https://fogline-mcp.tapelog.workers.dev/skill.md) keeps working.
 - **Fog of war:** enemy ranks are removed on the server before anything reaches the widget.
 
 ## Add it in ChatGPT
@@ -39,5 +42,5 @@ MCP_URL=https://fogline-mcp.tapelog.workers.dev/mcp node chatgpt-app/harness/ser
 # http://localhost:8787/?new=1                          fresh player + match vs the bot
 # http://localhost:8787/?session=fl_...&matchId=21      existing match
 # &mode=openai    window.openai compatibility path
-# &mode=readonly  host refuses write tools (tests the HTTP API fallback)
+# &mode=readonly  host refuses write tools (tests the "moves need a plan with write actions" message)
 ```

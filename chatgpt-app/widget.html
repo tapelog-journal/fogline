@@ -75,7 +75,6 @@
   const CODE = ["B", "1", "2", "3", "4", "5", "6", "7", "M"];
   const RANKS = ["Beacon", "Ghost", "Scout", "Sapper", "Guard", "Knight", "Captain", "Warden", "Mine"];
 
-  const ORIGIN = "__FOGLINE_ORIGIN__"; // filled in by the server that serves this widget
   const st = { session: null, data: null, img: null, sel: null, busy: false, bridge: false, polls: 0 };
 
   // ---------------------------------------------------------------- host bridge (MCP Apps JSON-RPC over postMessage)
@@ -111,23 +110,23 @@
     if (o && o.callTool) return o.callTool(name, args);
     throw new Error("This chat app cannot run Fogline tools from the board. Ask the assistant to make the move instead.");
   }
-  // If the host refuses a tool call from the board (for example a plan where custom apps are read-only),
-  // a tap still works: the board calls Fogline's own public HTTP API for that one action (declared in the
-  // widget CSP), then reloads itself with the read-only fogline_state tool.
-  const REST = { fogline_move: "move", fogline_auto_army: "auto-army", fogline_play_bot: "play-bot" };
+  // Moves are write actions. If the host refuses one (for example a ChatGPT plan without app write actions),
+  // the board does not work around it: it explains why and offers the browser Play page instead.
+  const PLAY_URL = "https://tapelog-journal.github.io/fogline/play.html";
+  const WRITE = new Set(["fogline_move", "fogline_auto_army", "fogline_set_army", "fogline_play_bot", "fogline_resign"]);
+  class Refused extends Error {}
   async function act(name, args) {
     try { return await callTool(name, args); }
-    catch (e) {
-      if (!REST[name] || !/^https:/.test(ORIGIN)) throw e;
-      const q = new URLSearchParams({ session: args.session });
-      if (args.matchId) q.set("match", String(args.matchId));
-      if (args.from) { q.set("from", args.from); q.set("to", args.to); if (st.data) q.set("ply", String(st.data.ply)); }
-      const r = await fetch(`${ORIGIN}/api/${REST[name]}?${q}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((x) => x.json());
-      if (!r.ok) return { isError: true, content: [{ type: "text", text: "Error: " + r.error }] };
-      if (name === "fogline_play_bot") return { structuredContent: { matchId: String(r.matchId) } };
-      try { return await callTool("fogline_state", { session: args.session, matchId: Number(r.matchId || args.matchId) }); }
-      catch (e2) { return { isError: true, content: [{ type: "text", text: (r.text || "Done.") + " (Refresh the board to see it.)" }] }; }
-    }
+    catch (e) { if (WRITE.has(name)) throw new Refused(String((e && e.message) || e)); throw e; }
+  }
+  function showRefused() {
+    const e = $("fl-err"); e.innerHTML = "";
+    const t = document.createElement("div");
+    t.textContent = "ChatGPT didn't allow this move. Making moves from the board needs a ChatGPT plan with app write actions (OpenAI lists Business, Enterprise and Edu). You can still view the board here, ask the assistant to play using the skill.md links, or play in your browser:";
+    const a = document.createElement("a"); a.href = PLAY_URL; a.textContent = "Play this match in your browser"; a.target = "_blank"; a.rel = "noopener";
+    a.style.cssText = "display:inline-block;margin-top:8px;color:#ffd400;font-weight:700";
+    a.onclick = (ev) => { ev.preventDefault(); openLink(PLAY_URL); };
+    e.append(t, a); e.hidden = false;
   }
   function tellModel(text) {
     try {
@@ -250,7 +249,7 @@
       onResult(res);
       if (after && res && !res.isError) after(res);
       return res;
-    } catch (e) { busy(false); showErr(String((e && e.message) || e)); }
+    } catch (e) { busy(false); e instanceof Refused ? showRefused() : showErr(String((e && e.message) || e)); }
   }
   function move(from, to) {
     const d = st.data;
@@ -279,7 +278,7 @@
       if (!id) throw new Error(((r && r.content) || []).map((c) => c.text || "").join(" ").slice(0, 300) || "could not start a match");
       busy(false);
       await run("Placing your secret army onchain…", "fogline_auto_army", { session: st.session, matchId: Number(id) }, () => tellModel(`The user started Fogline match #${id} vs the TapeLog bot from the board.`));
-    } catch (e) { busy(false); showErr(String((e && e.message) || e)); }
+    } catch (e) { busy(false); e instanceof Refused ? showRefused() : showErr(String((e && e.message) || e)); }
   };
 
   // ---------------------------------------------------------------- startup
