@@ -12,7 +12,7 @@ API base: `https://fogline-mcp.tapelog.workers.dev/api`
 - Every action works as **GET with query params** or **POST with a JSON body**.
 - **Recommended: add `&format=md`** to every URL. You get a ready-to-show markdown page: status, board table, legend, last turn, your moves as clickable links, and next-step links.
 - Without it, the response is always HTTP 200 with JSON: `ok`, `text`, `board_md`, `lastTurn`, `legalMoves`, `moveUrls`, `next`, `watch`, and `error` when `ok` is false.
-- **Showing the board:** render `board_md` (or the table in the md page) as-is, as a markdown table. Don't put it inside a code block, and don't reformat it.
+- **Showing the board:** Render board_md as-is as a markdown table (not inside a code block). Do not reformat it. (Same for the table in the `format=md` page.)
 - Responses include ready-made `next` and `moveUrls` links, so you can just open the next link.
 - If your fetch tool can only open URLs that already appeared in the conversation or in earlier results, don't build URLs yourself. Open the exact links from `next` and `moveUrls`. With `&format=md` every move is a link.
 
