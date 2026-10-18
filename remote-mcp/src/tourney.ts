@@ -129,7 +129,7 @@ export class Tourney extends DurableObject<Env> {
         t = recordResult(t, r, i, w === 2 ? 2 : flip ? 1 - w : w, Date.now(), note);
         continue;
       }
-      if (m.phase === Phase.Open) { const g = A.bot ? A : B; if (!g.bot && g.objectId && g !== (A.bot ? B : A)) await this.player(g.objectId).join(p.matchId).catch(() => {}); continue; }
+      if (m.phase === Phase.Open) { const g = A.bot ? A : B; if (!g.bot && g.objectId && g !== (A.bot ? B : A)) await this.player(g.objectId).join(p.matchId).catch((e: any) => console.log(`tourney join retry #${p.matchId}:`, String(e?.message ?? e).slice(0, 160))); continue; }
       if (m.phase === Phase.PendingReveal) { const d = seatOf(m.turn); if (d.objectId) await this.player(d.objectId).autoReveal(p.matchId).catch(() => {}); }
       if (m.phase === Phase.Ended) {
         const w = seatOf(Number(m.winner));

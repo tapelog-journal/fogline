@@ -157,8 +157,11 @@ export class Player extends DurableObject<Env> {
   async join(idStr: string) {
     return this.lock.run(async () => {
       const c = cfg(this.env), id = BigInt(idStr);
-      const s = await readState(c.rpcUrl, c.game, id);
-      if (sideOf(s, await this.address()) >= 0) return { matchId: idStr, txs: [], watch: watchLink(this.env, id), already: true };
+      let s = await readState(c.rpcUrl, c.game, id);
+      for (let i = 0; i < 5 && s.match.phase === Phase.None; i++) { await sleep(1500); s = await readState(c.rpcUrl, c.game, id); } // a just-created match may not be visible on every RPC node yet
+      const mySide = sideOf(s, await this.address());
+      // a match reserved for us already lists us as player B while it is still Open: we still have to join it
+      if (mySide === 0 || (mySide === 1 && s.match.phase !== Phase.Open)) return { matchId: idStr, txs: [], watch: watchLink(this.env, id), already: true };
       if (s.match.phase !== Phase.Open) throw new UserError(`match #${id} is not open to join (phase ${Phase[s.match.phase]})`);
       if (s.match.stake > 0n && s.match.token.toLowerCase() !== c.token.toLowerCase()) throw new UserError("that match uses an unknown token; refusing");
       const txs = await this.stakeSetup(s.match.stake);
