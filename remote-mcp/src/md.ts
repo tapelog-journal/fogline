@@ -8,10 +8,11 @@ export function mdPage(r: any, links: MdLinks = {}): string {
   const out: string[] = [];
   const turn = r.yourTurn ? "**Your turn**" : r.status;
   out.push(`### Fogline match #${r.matchId} · ply ${r.ply} · ${turn}`);
+  if (r.boardImage) out.push(`![Fogline board, match #${r.matchId}, ply ${r.ply}](${r.boardImage})`);
   out.push(`You are 🔵 (${r.yourSide === "B" ? "side B, board shown from your side" : "side A, bottom ranks 1-2, moving up"}). ${r.yourTurn ? "" : r.status ?? ""}`.trim());
   const happened = (r.events?.length ? r.events : r.lastTurn) ?? [];
   if (happened.length) out.push(`**Last turn:** ${happened.join(" · ")}`);
-  if (r.boardMd) out.push(r.boardMd, MD_LEGEND);
+  if (r.boardMd) out.push((r.boardImage ? "**Text board** (fallback only if the picture above does not show):\n\n" : "") + r.boardMd + "\n\n" + MD_LEGEND);
   if (r.movesByPiece?.length) {
     const list = r.movesByPiece.map((g: any) => {
       const tos = g.to.map((t: string) => { const sq = t.replace("⚔️", ""); return links.move ? `[${t}](${links.move(g.from, sq)})` : t; });

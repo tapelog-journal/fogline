@@ -6,6 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { buildServer, houseAddress, VERSION } from "./tools";
 import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, type Env } from "./env";
 import { handleApi, ROBOTS } from "./api";
+import { handleBoardImage } from "./boardimg";
 // @ts-ignore text module (wrangler rule)
 import SKILL from "../skill.md";
 // @ts-ignore text module (wrangler rule)
@@ -15,6 +16,7 @@ export { Player } from "./player";
 export { House } from "./house";
 export { Funder } from "./funder";
 export { SseSession } from "./sse";
+export { Renderer } from "./renderer";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -31,7 +33,9 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
 
-    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return handleApi(req, env, ip);
+    const pic = url.pathname.match(/^\/api\/match\/(\d{1,9})\/board\.png$/);
+    if (pic) return handleBoardImage(req, env, pic[1]);
+    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return handleApi(req, env, ip, ctx);
     if (url.pathname === "/skill.md" || url.pathname === "/SKILL.md") return new Response(SKILL as string, { headers: { "content-type": "text/markdown; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
     if (url.pathname === "/llms.txt") return new Response(LLMS as string, { headers: { "content-type": "text/plain; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
     if (url.pathname === "/robots.txt") return new Response(ROBOTS, { headers: { "content-type": "text/plain; charset=utf-8" } });
@@ -41,7 +45,7 @@ export default {
         // stateless server: no standalone SSE stream / session to delete
         return withCors(new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed. POST JSON-RPC to /mcp (or use /sse for the legacy SSE transport)." }, id: null }), { status: 405, headers: { "content-type": "application/json", allow: "POST, OPTIONS" } }));
       }
-      const server = buildServer(env, ip);
+      const server = buildServer(env, ip, url.origin);
       const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       await server.connect(transport);
       const res = await transport.handleRequest(req);

@@ -8,10 +8,15 @@ import { readState } from "./chain";
 import { ALLOWED_CHAIN_ID, cfg, DISCLAIMER, FUNDING, watchLink, type Env } from "./env";
 import { boardView, boardMd, LEGEND, MD_LEGEND, parseSquare, summary } from "./view";
 import { mdPage } from "./md";
+import { boardImageUrl } from "./boardimg";
+import { renderer } from "./env";
+import { b64 } from "./png";
+import { ITEMS } from "./cosmetics";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
+export const PUBLIC_ORIGIN = "https://fogline-mcp.tapelog.workers.dev";
 
-export const INSTRUCTIONS = `Fogline is a hidden-army strategy game on Base Sepolia TESTNET (no real money). To play: 1) fogline_new_player once and remember the session it returns (pass it to every later call). 2) fogline_play_bot to start a match vs the TapeLog house bot (or fogline_create/fogline_join vs a friend). 3) fogline_auto_army (or fogline_set_army). 4) Loop: fogline_move with a from/to pair from legalMoves; the bot replies automatically and the result includes the new board. Use fogline_state to look again. Share the watch link. ${DISCLAIMER}`;
+export const INSTRUCTIONS = `Fogline is a hidden-army strategy game on Base Sepolia TESTNET (no real money). To play: 1) fogline_new_player once and remember the session it returns (pass it to every later call). 2) fogline_play_bot to start a match vs the TapeLog house bot (or fogline_create/fogline_join vs a friend). 3) fogline_auto_army (or fogline_set_army). 4) Loop: fogline_move with a from/to pair from legalMoves; the bot replies automatically and the result includes the new board as a picture (an image block plus a board_image_url: show it to the user each turn as a markdown image, falling back to the text board only if images can't be shown). Use fogline_state to look again. Optional: fogline_cosmetics / fogline_buy_cosmetic for decorative skins and tabletops (test fUSD). Share the watch link. ${DISCLAIMER}`;
 
 export const RULES = `FOGLINE RULES (an original TapeLog game)
 Board: 8x8. Squares are named like chess: files a-h (left to right) and ranks 1-8 (rank 1 is side A's home edge), e.g. c2. Squares c4 and f5 are fog banks: nobody can enter or pass them.
@@ -41,8 +46,20 @@ function err(e: any) {
   const m = String(e?.message ?? e).replace(/^Error:\s*/, "");
   return text(`Error: ${m}`, true);
 }
-export function fmtPlay(r: any) {
-  return "Show the user the board below as a markdown table exactly as given (not in a code block; do not reformat it).\n\n" + mdPage(r);
+export function fmtPlay(r: any, origin = PUBLIC_ORIGIN) {
+  const img = boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
+  return "Show the user the board picture: copy the markdown image line below (![Fogline board](...)) into your reply on its own line, not in a code block. Only if images cannot be shown, use the text board instead, exactly as given.\n\n" + `board_image_url: ${img}\n\n` + mdPage({ ...r, boardImage: img });
+}
+/** Tool result for a board: markdown text (with image link) + the PNG itself as an MCP image block. */
+async function boardResult(env: Env, r: any, prefix: string, origin: string) {
+  const content: any[] = [{ type: "text" as const, text: `${prefix}${fmtPlay(r, origin)}\n\n${DISCLAIMER}` }];
+  try {
+    if (r.scene) {
+      const pic = await renderer(env, r.matchId).png({ scene: r.scene, players: r.players, block: r.block });
+      content.push({ type: "image" as const, data: b64(pic.png), mimeType: "image/png" });
+    }
+  } catch (e) { console.log("inline board image failed", String(e).slice(0, 160)); }
+  return { content };
 }
 
 const DOCS: Record<string, { title: string; text: () => string; url: string }> = {
@@ -50,7 +67,7 @@ const DOCS: Record<string, { title: string; text: () => string; url: string }> =
   "how-to-play": { title: "How to play Fogline from an AI assistant", text: () => INSTRUCTIONS, url: "https://github.com/tapelog-journal/fogline#play-from-chatgpt--claude" },
 };
 
-export function buildServer(env: Env, ip: string) {
+export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   const c = cfg(env);
   const server = new McpServer({ name: "fogline", title: "Fogline by TapeLog", version: VERSION }, { instructions: INSTRUCTIONS });
   const player = (session: string): any => env.PLAYER.get(env.PLAYER.idFromName(session));
@@ -125,7 +142,7 @@ export function buildServer(env: Env, ip: string) {
     title: "Auto-place army", description: "Use this right after a match starts to place a sensible random secret army (Beacon on the back row guarded by Mines). Waits briefly for the opponent and returns the board.",
     inputSchema: { session: sessionArg, matchId: matchArg }, annotations: WR,
   }, async ({ session, matchId }) => {
-    try { return text("Army placed (hidden onchain as hashes).\n\n" + fmtPlay(await player(session).commitArmy(String(matchId)))); } catch (e) { return err(e); }
+    try { return await boardResult(env, await player(session).commitArmy(String(matchId)), "Army placed (hidden onchain as hashes).\n\n", origin); } catch (e) { return err(e); }
   });
 
   server.registerTool("fogline_set_army", {
@@ -133,7 +150,7 @@ export function buildServer(env: Env, ip: string) {
     description: "Use this instead of fogline_auto_army when the user wants to choose the layout. Give exactly 16 rank names in order of your starting squares (side A: a1..h1 then a2..h2; side B: a7..h7 then a8..h8). Must contain exactly: 1 Beacon, 1 Ghost, 3 Scout, 2 Sapper, 3 Guard, 2 Knight, 1 Captain, 1 Warden, 2 Mine.",
     inputSchema: { session: sessionArg, matchId: matchArg, ranks: z.array(RANK).length(16).describe("16 rank names in starting-square order.") }, annotations: WR,
   }, async ({ session, matchId, ranks }) => {
-    try { return text("Custom army placed (hidden onchain as hashes).\n\n" + fmtPlay(await player(session).commitArmy(String(matchId), ranks.map((r) => RANK_IDX[r])))); } catch (e) { return err(e); }
+    try { return await boardResult(env, await player(session).commitArmy(String(matchId), ranks.map((r) => RANK_IDX[r])), "Custom army placed (hidden onchain as hashes).\n\n", origin); } catch (e) { return err(e); }
   });
 
   server.registerTool("fogline_move", {
@@ -145,7 +162,7 @@ export function buildServer(env: Env, ip: string) {
     try {
       const f = parseSquare(from), t = parseSquare(to);
       if (Number.isNaN(f) || Number.isNaN(t)) throw new Error("from/to must be squares like \"b2\" (a1..h8)");
-      return text(fmtPlay(await player(session).move(String(matchId), f, t)));
+      return await boardResult(env, await player(session).move(String(matchId), f, t), "", origin);
     } catch (e) { return err(e); }
   });
 
@@ -154,14 +171,37 @@ export function buildServer(env: Env, ip: string) {
     description: "Use this to see a match from the player's point of view: your pieces with ranks, enemy pieces as hidden unless revealed, whose turn it is, the turn timer, your legal moves and a watch link. Read-only.",
     inputSchema: { session: sessionArg, matchId: matchArg }, annotations: RO,
   }, async ({ session, matchId }) => {
-    try { return text(fmtPlay(await player(session).state(String(matchId)))); } catch (e) { return err(e); }
+    try { return await boardResult(env, await player(session).state(String(matchId)), "", origin); } catch (e) { return err(e); }
   });
 
   server.registerTool("fogline_resign", {
     title: "Resign", description: "Use this only when the user explicitly wants to give up the match. The opponent wins (and any test-token stake).",
     inputSchema: { session: sessionArg, matchId: matchArg }, annotations: { ...WR, destructiveHint: true },
   }, async ({ session, matchId }) => {
-    try { return text("You resigned.\n\n" + fmtPlay(await player(session).resign(String(matchId)))); } catch (e) { return err(e); }
+    try { return await boardResult(env, await player(session).resign(String(matchId)), "You resigned.\n\n", origin); } catch (e) { return err(e); }
+  });
+
+  server.registerTool("fogline_cosmetics", {
+    title: "List Fogline cosmetics",
+    description: "Use this when the user asks about skins, tabletops, effects or how to customize their board picture. Lists the 22 decorative items (zero gameplay effect), their test-fUSD prices, and which ones this player owns. Owned items are drawn in the player's board pictures.",
+    inputSchema: { session: sessionArg }, annotations: RO,
+  }, async ({ session }) => {
+    try {
+      const r = await player(session).cosmetics(), owned = new Set(r.owned);
+      return text(`Fogline cosmetics: decorative only, paid with valueless TEST fUSD (you have ${r.fUSD}).\n` + ITEMS.map((i) => `#${i.id} ${i.name} · ${i.category} · ${i.rarity} · ${i.price} fUSD${owned.has(i.id) ? " · OWNED" : ""}${r.equipped.includes(i.id) ? " (equipped)" : ""}`).join("\n") + "\n\nBuy with fogline_buy_cosmetic. Gallery: https://tapelog-journal.github.io/fogline/#cosmetics");
+    } catch (e) { return err(e); }
+  });
+
+  server.registerTool("fogline_buy_cosmetic", {
+    title: "Buy a Fogline cosmetic (test fUSD)",
+    description: "Use this when the user wants a decorative item for their board picture. Buys one item with valueless TEST fUSD on Base Sepolia (skipped if already owned) and equips skins/tabletops. No real money; no gameplay effect.",
+    inputSchema: { session: sessionArg, item: z.union([z.number().int().min(1).max(22), z.string()]).describe("Item id 1-22 or exact name from fogline_cosmetics.") },
+    annotations: WR,
+  }, async ({ session, item }) => {
+    try {
+      const r = await player(session).buyCosmetic(String(item));
+      return text(`${r.alreadyOwned ? "Already owned" : "Bought"} ${r.item.name}${r.equipped ? " and equipped it" : ""}. It now appears in your board pictures.${r.txs.length ? "\n\nOnchain transactions:\n" + r.txs.map((t: any) => `- ${t.fn}: ${t.url}`).join("\n") : ""}`);
+    } catch (e) { return err(e); }
   });
 
   // ---- search / fetch (read-only compatibility tools for ChatGPT deep research / company knowledge)

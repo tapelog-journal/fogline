@@ -9,6 +9,10 @@ import { combatNote, gameCall, matchIdFrom, mockUsdcAbi, narrate, pub, readState
 import { cfg, DEFAULT_TURN_TIMEOUT, txLink, watchLink, type Env } from "./env";
 import { Mutex, nonceStore } from "./store";
 import { boardMd, boardView, coord, diffEvents, groupMoves, sideOf, summary, type LastMove } from "./view";
+import { DEFAULT_LOOK_PAIR, renderer } from "./env";
+import { sceneFrom } from "./render";
+import { viewToken } from "./boardimg";
+import { cosmeticsCall, findItem, ITEMS, ownedBy } from "./cosmetics";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class UserError extends Error {}
@@ -257,7 +261,10 @@ export class Player extends DurableObject<Env> {
   private async render(s: Awaited<ReturnType<typeof readState>>, side: number, l?: Layout, lastTurn?: { lines: string[]; last?: LastMove }) {
     const v = boardView(s, side, l), sm = summary(s, side);
     const legal = v.moves.map((m) => ({ from: m.from, to: m.to, fromSq: coord(m.from), toSq: coord(m.to), piece: l ? RANK_NAMES[l.ranks[m.pieceIndex]] : undefined, attack: m.attack }));
+    const scene = sceneFrom(s, side, l, DEFAULT_LOOK_PAIR());
     return {
+      scene, players: [s.match.players[0], s.match.players[1]] as [string, string], block: s.block?.toString() ?? "0",
+      viewToken: side >= 0 ? await viewToken(this.env, this.ctx.id.toString(), s.id.toString()) : undefined,
       matchId: s.id.toString(), phase: Phase[s.match.phase], ply: s.match.ply, yourTurn: s.match.phase === Phase.Playing && s.match.turn === side, yourSide: side === 0 ? "A" : side === 1 ? "B" : "spectator", status: sm.status, summary: sm.line,
       board: v.ascii, boardMd: boardMd(s, side, l, lastTurn?.last), lastTurn: lastTurn?.lines ?? [],
       yourPieces: v.mine.map((x) => ({ ...x, sq: coord(x.square) })), enemyPieces: v.enemy.map((x) => ({ ...x, sq: coord(x.square) })),
@@ -290,6 +297,52 @@ export class Player extends DurableObject<Env> {
       await this.kickHouse(id);
       const side = sideOf(s, await this.address());
       return { txs: [out(t)], ...(await this.render(s, side, await this.layout(id), await this.story(id, side, t.receipt.blockNumber, s.block))) };
+    });
+  }
+
+  // ------------------------------------------------------------------ board picture + cosmetics
+
+  /** PNG of this player's own view of a match (own ranks visible, enemy hidden unless revealed onchain). */
+  async boardPng(idStr: string) {
+    const c = cfg(this.env), id = BigInt(idStr);
+    const s = await readState(c.rpcUrl, c.game, id);
+    const side = sideOf(s, await this.address());
+    const scene = sceneFrom(s, side, side >= 0 ? await this.layout(id) : undefined, DEFAULT_LOOK_PAIR());
+    return renderer(this.env, idStr).png({ scene, players: [s.match.players[0], s.match.players[1]], block: s.block.toString() });
+  }
+
+  async cosmetics() {
+    const c = cfg(this.env), address = await this.address();
+    const [o, fusd] = await Promise.all([
+      ownedBy(c.rpcUrl, c.cosmetics, address),
+      pub(c.rpcUrl).readContract({ address: c.token, abi: mockUsdcAbi, functionName: "balanceOf", args: [address] }) as Promise<bigint>,
+    ]);
+    return { address, owned: o.owned, equipped: o.equipped, fUSD: formatUnits(fusd, 6), items: ITEMS };
+  }
+
+  /** Buy one decorative item with valueless test fUSD (skipped if already owned), then equip skins/tabletops. */
+  async buyCosmetic(q: string) {
+    return this.lock.run(async () => {
+      const it = findItem(q);
+      if (!it) throw new UserError(`unknown cosmetic "${q}". Use the item id (1-22) or name from the cosmetics list.`);
+      const c = cfg(this.env), address = await this.address(), p = pub(c.rpcUrl), txs: SentTx[] = [];
+      const o = await ownedBy(c.rpcUrl, c.cosmetics, address);
+      if (!o.owned.includes(it.id)) {
+        const price = BigInt(it.price) * 1_000_000n;
+        const [bal, allow] = await Promise.all([
+          p.readContract({ address: c.token, abi: mockUsdcAbi, functionName: "balanceOf", args: [address] }) as Promise<bigint>,
+          p.readContract({ address: c.token, abi: mockUsdcAbi, functionName: "allowance", args: [address, c.cosmetics] }) as Promise<bigint>,
+        ]);
+        if (bal < price) txs.push(await this.tx("faucet", tokenCall("faucet", []), c.token));
+        if (allow < price) txs.push(await this.tx("approve", tokenCall("approve", [c.cosmetics, price * 50n]), c.token));
+        txs.push(await this.tx("buy", cosmeticsCall("buy", [BigInt(it.id), 1]), c.cosmetics));
+      }
+      let equipped = false;
+      if ((it.category === "skin" || it.category === "table") && o.equipped[it.kind] !== it.id) {
+        txs.push(await this.tx("equip", cosmeticsCall("equip", [it.kind, BigInt(it.id)]), c.cosmetics));
+        equipped = true;
+      }
+      return { item: it, alreadyOwned: o.owned.includes(it.id), equipped, txs: txs.map(out) };
     });
   }
 

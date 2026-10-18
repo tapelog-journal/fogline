@@ -30,7 +30,7 @@ export class SseSession extends DurableObject<Env> {
       const write = async (s: string) => { try { await writer.write(enc.encode(s)); } catch { this.cleanup(); } };
       this.transport = new DOSseTransport(write);
       this.transport.sessionId = sid;
-      const server = buildServer(this.env, req.headers.get("cf-connecting-ip") ?? "unknown");
+      const server = buildServer(this.env, req.headers.get("cf-connecting-ip") ?? "unknown", new URL(req.url).origin);
       await server.connect(this.transport);
       void write(`event: endpoint\ndata: /messages?sessionId=${sid}\n\n`); // do not await: the stream is not being read until we return
       this.ping = setInterval(() => void write(`: ping\n\n`), 15_000);

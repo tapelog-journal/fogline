@@ -12,3 +12,4 @@ tools/render/node_modules/
 remote-mcp/node_modules/
 remote-mcp/.wrangler/
 remote-mcp/.dev.vars
+remote-mcp/test/.build/

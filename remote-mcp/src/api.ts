@@ -1,24 +1,27 @@
 // Plain HTTP JSON API mirroring the MCP tools, so any agent that can fetch a URL can play.
 // Every action accepts GET (query params) and POST (JSON body). Always HTTP 200 with ok:true/false,
 // because many agent fetch tools discard non-200 bodies. Base Sepolia testnet only.
-import { DISCLAIMER, FUNDING, watchLink, type Env } from "./env";
+import { DISCLAIMER, FUNDING, renderer, watchLink, type Env } from "./env";
+import { boardImageUrl } from "./boardimg";
 import { checkChain, RANK_IDX, RULES } from "./tools";
 import { mdPage } from "./md";
 import { parseSquare } from "./view";
 import { Phase } from "../../agent/src/rules";
 
-const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet"] as const;
+const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic"] as const;
 type Action = (typeof ACTIONS)[number];
 
 // Link-preview and index crawlers must never trigger actions. User-initiated agent fetchers
 // (ChatGPT-User, Claude-User, Perplexity-User, generic HTTP clients) are allowed.
 const CRAWLER_UA = /(googlebot|bingbot|duckduckbot|yandex|baiduspider|slurp|applebot|facebookexternalhit|facebot|twitterbot|slackbot|discordbot|telegrambot|linkedinbot|whatsapp|skypeuripreview|embedly|redditbot|pinterest|gptbot|oai-searchbot|claudebot|anthropic-ai|ccbot|bytespider|amazonbot|petalbot|semrush|ahrefs|mj12bot|dotbot|headlesschrome.*preview|preview)/i;
-const READ_ONLY: Action[] = ["rules", "state", "wallet"];
+const READ_ONLY: Action[] = ["rules", "state", "wallet", "cosmetics"];
 
 const HEADERS = { "x-robots-tag": "noindex, nofollow, noarchive", "cache-control": "no-store, max-age=0", "access-control-allow-origin": "*" };
 
-export async function handleApi(req: Request, env: Env, ip: string): Promise<Response> {
+export async function handleApi(req: Request, env: Env, ip: string, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(req.url), origin = url.origin;
+  // render the board picture in the background so the image URL in the reply loads instantly
+  const warm = (r: any) => { if (r?.scene && ctx) ctx.waitUntil(renderer(env, r.matchId).png({ scene: r.scene, players: r.players, block: r.block }).catch((e: any) => console.log("prewarm failed", String(e).slice(0, 120)))); };
   const action = url.pathname.replace(/^\/api\/?/, "").replace(/\/$/, "") as Action;
   let p: Record<string, any> = Object.fromEntries(url.searchParams);
   if (req.method === "POST") {
@@ -55,6 +58,21 @@ export async function handleApi(req: Request, env: Env, ip: string): Promise<Res
     const matchId = () => { const m = Number(p.match ?? p.matchId); if (!Number.isInteger(m) || m < 1) throw new Error("missing match (match id number)"); return String(m); };
 
     switch (action) {
+      case "cosmetics": {
+        const r = await pl.cosmetics();
+        const owned = new Set(r.owned);
+        const lines = r.items.map((i: any) => `#${i.id} ${i.name} (${i.category}, ${i.rarity}, ${i.price} fUSD)${owned.has(i.id) ? " ✅ owned" : ""}${r.equipped.includes(i.id) ? " · equipped" : ""}`);
+        return reply(p, { ok: true, owned: r.owned, equipped: r.equipped, fUSD: r.fUSD, items: lines,
+          text: `Decorative cosmetics (zero gameplay effect), paid with valueless TEST fUSD on Base Sepolia. You have ${r.fUSD} fUSD and own ${r.owned.length}. Owned skins, tabletops, fog styles, trails, effects and banners appear in your board pictures. Buy one: ${origin}/api/buy-cosmetic?session=${session}&item=<id>`,
+          catalog: "https://tapelog-journal.github.io/fogline/#cosmetics", next: { buy: `${origin}/api/buy-cosmetic?session=${session}&item=6` } }, () => `### Fogline cosmetics (test fUSD, decorative only)\n\nYou have **${r.fUSD} fUSD**. Owned items show up in your board picture.\n\n` + lines.map((l: string, k: number) => `- [${l}](${origin}/api/buy-cosmetic?session=${session}&item=${r.items[k].id})`).join("\n") + `\n\n_${DISCLAIMER}_`);
+      }
+      case "buy-cosmetic": {
+        const item = String(p.item ?? p.id ?? "");
+        if (!item) throw new Error("add &item=<id 1-22 or name>. List: " + `${origin}/api/cosmetics?session=${session}`);
+        const r = await pl.buyCosmetic(item);
+        return reply(p, { ok: true, item: r.item.name, alreadyOwned: r.alreadyOwned, equipped: r.equipped, txs: r.txs.map((t: any) => t.url),
+          text: `${r.alreadyOwned ? "Already owned" : "Bought"} ${r.item.name} with test fUSD${r.equipped ? " and equipped it" : ""}. It now shows in your board pictures. Decorative only.`, next: { cosmetics: `${origin}/api/cosmetics?session=${session}` } });
+      }
       case "wallet": { const r = await pl.info(); return reply(p, { ok: true, ...r, text: `wallet ${r.address}: ${r.eth} test ETH, ${r.fUSD} fUSD; matches: ${r.matches.join(", ") || "none"}` }); }
       case "play-bot": {
         const r = await pl.playBot(stakeUnits(), timeout(), p.ref ? String(p.ref).slice(0, 64) : undefined);
@@ -75,24 +93,24 @@ export async function handleApi(req: Request, env: Env, ip: string): Promise<Res
         return reply(p, { ok: true, matchId: id, already: !!r.already, txs: r.txs.map((t: any) => t.url), watch: r.watch,
           text: `${r.already ? "Already in" : "Joined"} match #${id}. Next: ${origin}/api/auto-army?session=${session}&match=${id}`, next: { autoArmy: `${origin}/api/auto-army?session=${session}&match=${id}` } });
       }
-      case "auto-army": return play(p, origin, session, await pl.commitArmy(matchId()), "Army placed.");
+      case "auto-army": return play(warm, p, origin, session, await pl.commitArmy(matchId()), "Army placed.");
       case "set-army": {
         const raw = Array.isArray(p.ranks) ? p.ranks : String(p.ranks ?? "").split(/[\s,]+/).filter(Boolean);
         const norm = raw.map((x: string) => x.charAt(0).toUpperCase() + x.slice(1).toLowerCase());
         if (norm.length !== 16 || norm.some((x: string) => RANK_IDX[x] === undefined)) throw new Error("ranks must be 16 comma-separated rank names (Beacon, Ghost, Scout, Sapper, Guard, Knight, Captain, Warden, Mine) in starting-square order");
-        return play(p, origin, session, await pl.commitArmy(matchId(), norm.map((x: string) => RANK_IDX[x])), "Custom army placed.");
+        return play(warm, p, origin, session, await pl.commitArmy(matchId(), norm.map((x: string) => RANK_IDX[x])), "Custom army placed.");
       }
       case "move": {
         const from = parseSquare(p.from), to = parseSquare(p.to);
         if (Number.isNaN(from) || Number.isNaN(to)) throw new Error("from and to must be squares like b2 (a1..h8); numeric 0..63 also accepted");
         if (p.ply === undefined && req.method === "GET") throw new Error("GET moves need &ply=<current ply> (copy the move URL from the last response) so a repeated fetch can't move twice");
         const ply = p.ply === undefined ? undefined : Number(p.ply);
-        return play(p, origin, session, await pl.move(matchId(), from, to, ply), "");
+        return play(warm, p, origin, session, await pl.move(matchId(), from, to, ply), "");
       }
-      case "state": return play(p, origin, session, await pl.state(matchId()), "");
+      case "state": return play(warm, p, origin, session, await pl.state(matchId()), "");
       case "resign": {
         if (String(p.confirm ?? "") !== "yes") throw new Error("resigning ends the match: add &confirm=yes only if the human really wants to give up");
-        return play(p, origin, session, await pl.resign(matchId()), "You resigned.");
+        return play(warm, p, origin, session, await pl.resign(matchId()), "You resigned.");
       }
     }
   } catch (e: any) {
@@ -101,8 +119,10 @@ export async function handleApi(req: Request, env: Env, ip: string): Promise<Res
   return reply(p, { ok: false, error: "unhandled" });
 }
 
-function play(p: Record<string, any>, origin: string, session: string, r: any, prefix: string) {
+function play(warm: (r: any) => void, p: Record<string, any>, origin: string, session: string, r: any, prefix: string) {
   const base = `${origin}/api`, q = `session=${session}&match=${r.matchId}`;
+  warm(r);
+  const img = boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
   const fmt = p.format === "md" || p.format === "text" ? `&format=${p.format}` : "";
   const moveUrl = (f: string, t: string) => `${base}/move?${q}&from=${f}&to=${t}&ply=${r.ply}${fmt}`;
   const legal = r.legalMoves ?? [];
@@ -111,8 +131,10 @@ function play(p: Record<string, any>, origin: string, session: string, r: any, p
   if (r.phase === "Settled" || r.phase === "Ended") next.playAgain = `${base}/play-bot?session=${session}&ref=${Date.now().toString(36)}${fmt}`;
   const body = {
     ok: true, matchId: r.matchId, phase: r.phase, ply: r.ply, yourTurn: r.yourTurn, yourSide: r.yourSide, status: r.status, stale: !!r.stale,
+    board_image_url: img,
+    board_image_markdown: `![Fogline board, match #${r.matchId}, ply ${r.ply}](${img})`,
+    render_hint: "Show the board picture: put board_image_markdown on its own line in your reply (a markdown image, not inside a code block). Only if images cannot be shown, render board_md as-is as a markdown table.",
     board_md: r.boardMd,
-    render_hint: "Render board_md as-is as a markdown table (not inside a code block). Do not reformat it.",
     lastTurn: (r.events?.length ? r.events : r.lastTurn) ?? [],
     legalMoves: legal.map((m: any) => `${m.piece ?? "piece"} ${m.fromSq} → ${m.toSq}${m.attack ? " ⚔️" : ""}`),
     movesByPiece: (r.movesByPiece ?? []).map((g: any) => `${g.piece} ${g.from} → ${g.to.join(", ")}`),
@@ -123,7 +145,7 @@ function play(p: Record<string, any>, origin: string, session: string, r: any, p
     text: (prefix ? prefix + " " : "") + [...((r.events?.length ? r.events : r.lastTurn) ?? []), r.summary].filter(Boolean).join(". "),
     board_ascii: r.board,
   };
-  return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs }, { move: moveUrl, refresh: next.state, extra: next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : [] }));
+  return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs, boardImage: img }, { move: moveUrl, refresh: next.state, extra: next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : [] }));
 }
 
 function reply(p: Record<string, any>, body: Record<string, any>, textFn?: () => string): Response {

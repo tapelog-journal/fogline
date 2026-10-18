@@ -6,12 +6,14 @@ export interface Env {
   HOUSE: DurableObjectNamespace<import("./house").House>;
   FUNDER: DurableObjectNamespace<import("./funder").Funder>;
   SSE: DurableObjectNamespace<import("./sse").SseSession>;
+  RENDER: DurableObjectNamespace<import("./renderer").Renderer>;
   CHAIN_ID: string;
   RPC_URL: string;
   /** comma-separated fallback RPCs */
   RPC_FALLBACKS?: string;
   GAME: string;
   TOKEN: string;
+  COSMETICS: string;
   WATCH_BASE: string;
   /** secrets (wrangler secret put) */
   FUNDER_KEY: string;
@@ -24,7 +26,7 @@ export const ALLOWED_CHAIN_ID = 84532;
 export function cfg(env: Env) {
   const chainId = Number(env.CHAIN_ID);
   if (chainId !== ALLOWED_CHAIN_ID) throw new Error(`Fogline remote MCP is Base Sepolia testnet only; chainId ${env.CHAIN_ID} refused`);
-  return { chainId, rpcUrl: [env.RPC_URL, ...(env.RPC_FALLBACKS ?? "").split(",")].map((u) => u.trim()).filter(Boolean).join(","), game: env.GAME as Address, token: env.TOKEN as Address, watchBase: env.WATCH_BASE };
+  return { chainId, rpcUrl: [env.RPC_URL, ...(env.RPC_FALLBACKS ?? "").split(",")].map((u) => u.trim()).filter(Boolean).join(","), game: env.GAME as Address, token: env.TOKEN as Address, cosmetics: env.COSMETICS as Address, watchBase: env.WATCH_BASE };
 }
 
 export const DISCLAIMER = "Game for entertainment. Testnet only. Not investment advice.";
@@ -50,3 +52,7 @@ export const FUNDING = {
 
 export const MAX_HOUSE_MATCHES = 12;
 export const DEFAULT_TURN_TIMEOUT = 600; // seconds per turn (contract min 60)
+
+/** Renderer shard for a match (board pictures are CPU-heavy; spread matches over a few Durable Objects). */
+export const renderer = (env: Env, matchId: string | bigint) => env.RENDER.get(env.RENDER.idFromName(`render-${BigInt(matchId) % 8n}`));
+export const DEFAULT_LOOK_PAIR = (): [import("./render").Look, import("./render").Look] => [0, 1].map(() => ({ skin: 0, table: 0, fog: 0, trail: 0, banner: 0, fx: [] })) as any;

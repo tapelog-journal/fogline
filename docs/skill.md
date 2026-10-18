@@ -10,9 +10,10 @@ Fogline is an original strategy game by TapeLog that runs on the Base Sepolia **
 API base: `https://fogline-mcp.tapelog.workers.dev/api`
 
 - Every action works as **GET with query params** or **POST with a JSON body**.
-- **Recommended: add `&format=md`** to every URL. You get a ready-to-show markdown page: status, board table, legend, last turn, your moves as clickable links, and next-step links.
-- Without it, the response is always HTTP 200 with JSON: `ok`, `text`, `board_md`, `lastTurn`, `legalMoves`, `moveUrls`, `next`, `watch`, and `error` when `ok` is false.
-- **Showing the board:** Render board_md as-is as a markdown table (not inside a code block). Do not reformat it. (Same for the table in the `format=md` page.)
+- **Recommended: add `&format=md`** to every URL. You get a ready-to-show markdown page: status, the board picture, last turn, your moves as clickable links, next-step links, and a text board as a fallback.
+- Without it, the response is always HTTP 200 with JSON: `ok`, `text`, `board_image_url`, `board_image_markdown`, `board_md`, `lastTurn`, `legalMoves`, `moveUrls`, `next`, `watch`, and `error` when `ok` is false.
+- **Showing the board (every turn):** show the board **picture**. Put the markdown image line on its own line in your reply, not inside a code block: `![Fogline board](BOARD_IMAGE_URL)`. Use `board_image_markdown` from the JSON, or copy the `![Fogline board…](…)` line at the top of the `format=md` page. The picture shows the player's own ranks, hidden enemy pieces, the last move, and the cosmetics each player owns.
+- **Fallback only:** if you cannot display images, render `board_md` as-is as a markdown table (not inside a code block). Do not reformat it.
 - Responses include ready-made `next` and `moveUrls` links, so you can just open the next link.
 - If your fetch tool can only open URLs that already appeared in the conversation or in earlier results, don't build URLs yourself. Open the exact links from `next` and `moveUrls`. With `&format=md` every move is a link.
 
@@ -63,6 +64,7 @@ Optional parameters:
   Side A's order is a1..h1 then a2..h2. Side B's order is a7..h7 then a8..h8.
 - `resign` needs `&confirm=yes`.
 - `wallet` shows balances.
+- `cosmetics` lists the 22 decorative items and the ones the player owns. `buy-cosmetic&item=ID` buys one with valueless test fUSD (skipped if already owned) and equips skins and tabletops. Owned skins, tabletops, fog styles, trails, effects and victory banners are drawn in the board picture. Decorative only: zero gameplay effect.
 
 ## Play vs a friend
 
@@ -84,7 +86,16 @@ curl -s "$B/state?session=SESSION&match=MATCH&format=md"
 
 ## Reading the board
 
-`board_md` is a markdown table. Show it to the human exactly as given:
+The board picture (`board_image_url`, a PNG) is drawn from the player's point of view, with their own side at the bottom:
+
+- Files a-h and ranks 1-8 are printed on all four edges, and each square has its name in the corner.
+- Your pieces show their rank symbol and a number pip (1 Ghost, 2 Scout, 3 Sapper, 4 Guard, 5 Knight, 6 Captain, 7 Warden). The Beacon and Mines have no pip.
+- Enemy pieces show a fog back until they are revealed in combat. The picture never shows hidden ranks.
+- The last move is drawn as an arrow. A dashed square marks where it came from, and a glowing square marks where it landed.
+- The strips above and below the board show whose turn it is and the pieces each side has lost.
+- The image URL carries a read-only view token for this player and match. It shows only this player's own view. Without `view=`, the same URL path gives the spectator view: `https://fogline-mcp.tapelog.workers.dev/api/match/MATCH/board.png`.
+
+`board_md` is the text fallback, a markdown table. Show it only if images can't be displayed, exactly as given:
 
 |   | a | b | c | d | e | f | g | h |
 |:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -116,7 +127,7 @@ curl -s "$B/state?session=SESSION&match=MATCH&format=md"
 
 - Ask the human before each move if they want to choose ("I suggest e2 → e3. OK?"). Otherwise play on their behalf and summarize each turn.
 - Use one session per human. Don't create extra players to get more test ETH: funding is rate-limited.
-- Show the board table after every turn (render it, don't paste it as code).
+- Show the board picture after every turn (the markdown image, not pasted as code). Use the text table only if images can't be shown.
 - Every `move` URL carries `ply`. If you open the same link twice, the second call won't move, and it returns `stale: true` with the current board.
 - If you get `ok: false`, read `error`. It explains what to do (for example, it isn't your turn yet).
 - Resign only when the human asks.

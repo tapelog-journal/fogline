@@ -9,10 +9,13 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "e2e": "node test/e2e.mjs"
+    "e2e": "node test/e2e.mjs",
+    "test": "node --test test/render.test.mjs",
+    "preview": "node test/render-preview.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@resvg/resvg-wasm": "^2.6.2",
     "viem": "^2.57.7",
     "zod": "^4.6.7"
   },

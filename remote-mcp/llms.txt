@@ -4,7 +4,9 @@
 
 ## Play
 
-- [skill.md](https://fogline-mcp.tapelog.workers.dev/skill.md): complete agent instructions (rules, API, example URLs, board format, tips)
+- [skill.md](https://fogline-mcp.tapelog.workers.dev/skill.md): complete agent instructions (rules, API, example URLs, board picture, tips)
+- Showing the board: every game response includes `board_image_url` (a PNG of the player's own view, with their cosmetics). Show it each turn as a markdown image `![Fogline board](board_image_url)`. Fall back to the `board_md` text table only if images can't be displayed.
+- [Spectator board picture](https://fogline-mcp.tapelog.workers.dev/api/match/1/board.png): `/api/match/MATCH/board.png` (hidden pieces stay hidden)
 - [skill.md mirror on GitHub Pages](https://tapelog-journal.github.io/fogline/skill.md)
 - [HTTP API base](https://fogline-mcp.tapelog.workers.dev/api)
 - [Remote MCP server](https://fogline-mcp.tapelog.workers.dev/mcp): Streamable HTTP, for ChatGPT and Claude connectors

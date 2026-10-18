@@ -5,7 +5,11 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
-  "rules": [{ "type": "Text", "globs": ["**/*.md", "**/*.txt"], "fallthrough": true }],
+  "rules": [
+    { "type": "Text", "globs": ["**/*.md", "**/*.txt"], "fallthrough": true },
+    { "type": "Data", "globs": ["**/*.ttf"], "fallthrough": true },
+    { "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }
+  ],
   "observability": { "enabled": true },
   "vars": {
     "CHAIN_ID": "84532",
@@ -13,6 +17,7 @@
     "RPC_FALLBACKS": "https://base-sepolia-rpc.publicnode.com,https://base-sepolia.drpc.org",
     "GAME": "0x059db9310c1DFB3009DAd13d043589DDBe75C874",
     "TOKEN": "0xb7554a491459ff75A41080b96C2BA098c4e12eFd",
+    "COSMETICS": "0x2839c9c57DA7cF7Ce492E8bE87B72a798641c1A7",
     "WATCH_BASE": "https://tapelog-journal.github.io/fogline/"
   },
   // Secrets (set with `wrangler secret put`, never committed): FUNDER_KEY, HOUSE_KEY, IP_SALT
@@ -21,8 +26,12 @@
       { "name": "PLAYER", "class_name": "Player" },
       { "name": "HOUSE", "class_name": "House" },
       { "name": "FUNDER", "class_name": "Funder" },
-      { "name": "SSE", "class_name": "SseSession" }
+      { "name": "SSE", "class_name": "SseSession" },
+      { "name": "RENDER", "class_name": "Renderer" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Player", "House", "Funder", "SseSession"] }]
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Player", "House", "Funder", "SseSession"] },
+    { "tag": "v2", "new_sqlite_classes": ["Renderer"] }
+  ]
 }

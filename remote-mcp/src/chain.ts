@@ -170,3 +170,21 @@ export async function narrate(rpc: string, game: Address, id: bigint, fromBlock:
     return { lines, last };
   } catch (e) { console.log("narrate failed", String(e).slice(0, 200)); return undefined; }
 }
+
+export interface LastActionInfo { from: number; to: number; side: number; attack: boolean; outcome?: number; attackerRank?: number; defenderRank?: number }
+/** The two most recent moves/attacks in a match, oldest first (public onchain events only), searched over the last `span` blocks. */
+export async function lastActions(rpc: string, game: Address, id: bigint, toBlock: bigint, span = 3000n): Promise<LastActionInfo[]> {
+  try {
+    const fromBlock = toBlock > span ? toBlock - span : 0n;
+    const logs = await pub(rpc).getLogs({ address: game, fromBlock, toBlock, topics: [null, `0x${id.toString(16).padStart(64, "0")}` as Hex] } as any);
+    const ev = (parseEventLogs({ abi: foglineAbi, logs: logs as any }) as any[]).filter((e) => e.args?.id === id);
+    const acts: LastActionInfo[] = [];
+    for (const e of ev) {
+      const a = e.args, last = acts[acts.length - 1];
+      if (e.eventName === "Moved") acts.push({ from: Number(a.from), to: Number(a.to), side: Number(a.side), attack: false });
+      else if (e.eventName === "Attack") acts.push({ from: Number(a.from), to: Number(a.to), side: Number(a.side), attack: true });
+      else if (e.eventName === "Combat" && last?.attack) Object.assign(last, { outcome: Number(a.outcome), attackerRank: Number(a.attackerRank), defenderRank: Number(a.defenderRank) });
+    }
+    return acts.slice(-2);
+  } catch (e) { console.log("lastActions failed", String(e).slice(0, 160)); return []; }
+}
