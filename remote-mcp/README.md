@@ -28,6 +28,15 @@ Funding policy (see `src/env.ts`):
 - Top-ups of 0.00005 ETH only when a wallet is below 0.00003 ETH: 2 per session and 40 overall per day.
 - The funder stops granting below 0.001 ETH so the house bot keeps gas.
 
+## Board pictures, history and cosmetics
+
+- `GET /api/match/<id>/board.png`: PNG of the board (spectator view: hidden pieces stay hidden). Add `view=<token>` (included in every player's `board_image_url`) for that player's own view, with their ranks. `t=` is only a cache buster.
+- Every board response includes `board_image_url` and `board_image_markdown`. MCP tools also return the PNG as an image content block. `board_md` is still there as a text fallback.
+- The picture uses each player's onchain cosmetics (owned or equipped skins, tabletops, fog styles, trails, effects and banners) and highlights the last two moves. It is rendered with resvg (WebAssembly) in the `Renderer` Durable Object and cached by scene hash.
+- `GET /api/match/<id>/history`: the full public move history, rebuilt from onchain events in the viewer's replay format. The viewer uses it for `?game=…&match=…` links.
+- `cosmetics` and `buy-cosmetic&item=ID` (API), or `fogline_cosmetics` and `fogline_buy_cosmetic` (MCP): decorative items paid for with valueless test fUSD.
+- Tests: `npm test` (renderer unit tests), `node test/history-check.mjs 10 15`, `node test/image-e2e.mjs`.
+
 ## Deploy
 
 ```bash
