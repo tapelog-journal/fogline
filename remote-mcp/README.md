@@ -71,6 +71,14 @@ The `Tourney` Durable Object (`src/tourney.ts`, pure bracket logic in `src/tourn
 - **API:** `GET /api/tournament[?id=]` (JSON or `format=md`). MCP `fogline_tournament`.
 - **Operator practice brackets:** `POST /admin/practice-tournament` needs the `ADMIN_TOKEN` secret in the `x-admin-token` header. The token is never put in a URL.
 
+## Highlight clips
+
+`src/clips.ts` finds the highlights of a match from its public onchain history (`history.ts` snapshots): every capture, Mine blast (an attacker lost to a Mine), Ghost ambush on a Warden, and the winning moment (a Beacon capture, or the resign/timeout that ended it). For each one the Renderer DO (sharded by match) rasterizes the spectator view of the lead-up moves plus the moment itself with resvg (players' equipped cosmetics, last-move arrows and capture effects included), and encodes a looping GIF with gifenc (MIT; one shared palette, unchanged pixels transparent, about 80-100 KB for 5-7 frames). It also renders a 1200x630 share card. Finished clips are cached in DO storage (newest 60).
+
+- `GET /clip/N/STEP`: share page with `og:image` / `twitter:card=summary_large_image` tags pointing at the card, the GIF, Play and replay links. `/clip/N/win` and `/clip/N/last` redirect to the step.
+- `GET /clip/N/STEP.gif`, `GET /clip/N/STEP/card.png`, `GET /api/match/N/highlights` (JSON), MCP `fogline_highlights`.
+- Auto-generation: the ladder pre-builds the win clip when it rates a match; `move`/`state` replies add `next.clip` / `highlight_clip` after a capture or at game end; the Play page shows a "🎬 Share" link and the ladder's recent matches link their clips.
+
 ## Deploy
 
 ```bash

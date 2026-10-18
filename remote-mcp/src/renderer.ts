@@ -10,6 +10,7 @@ import { boardSvg, envSvg, tableOf, type BoardScene, type Look } from "./render"
 import { b64, svgToPng, svgToRgba } from "./png";
 import { actionOf, cardSvg, clipSteps, encodeGif, findHighlights, type Highlight } from "./clips";
 import { sceneFrom } from "./render";
+const named = (t: string, n: [string, string]) => t.replace(/Side A/g, n[0] || "Side A").replace(/Side B/g, n[1] || "Side B");
 import { sha256Hex } from "./store";
 import { GAME_DEPLOY_BLOCK, head, loadHistory, scanCreated, type History } from "./history";
 
@@ -80,11 +81,19 @@ export class Renderer extends DurableObject<Env> {
 
   // ------------------------------------------------------------------ highlight clips (sharded by match)
   private clipBusy = new Map<string, Promise<any>>();
+  /** Display names for a match's two seats: ladder names, "TapeLog bot" for the house, else a short address. */
+  private async clipNames(players: string[]): Promise<[string, string]> {
+    const house = privateKeyToAccount(this.env.HOUSE_KEY as Hex).address.toLowerCase();
+    const names = players.map((a) => (!a || /^0x0{40}$/i.test(a) ? "" : a.toLowerCase() === house ? "TapeLog bot" : `${a.slice(0, 6)}…${a.slice(-4)}`)) as [string, string];
+    try { const lad: any = this.env.LADDER.get(this.env.LADDER.idFromName("ladder")); for (let i = 0; i < 2; i++) if (names[i] && names[i] !== "TapeLog bot") { const e = await lad.get(players[i]); if (e?.name) names[i] = e.name; } } catch {}
+    return names;
+  }
   private async hist(matchId: string) { return this.env.RENDER.get(this.env.RENDER.idFromName("history")).history(matchId); }
 
   async highlights(matchId: string): Promise<{ done: boolean; players: string[]; items: Highlight[] }> {
     const h = await this.hist(matchId);
-    return { done: h.done, players: h.players, items: findHighlights(h) };
+    const nm = await this.clipNames(h.players);
+    return { done: h.done, players: h.players, items: findHighlights(h).map((x) => ({ ...x, title: named(x.title, nm), detail: named(x.detail, nm) })) };
   }
 
   /** GIF + share card for one highlight. `which` = step number, "win" or "last". Cached in storage once the match is over. */
@@ -99,14 +108,14 @@ export class Renderer extends DurableObject<Env> {
   private async makeClip(matchId: string, which: string) {
     const h = await this.hist(matchId);
     const items = findHighlights(h);
+    const nm = await this.clipNames(h.players);
+    for (const x of items) { x.title = named(x.title, nm); x.detail = named(x.detail, nm); }
     const hl = which === "win" ? items.find((x) => x.kind === "win") : which === "last" ? items[items.length - 1] : items.find((x) => String(x.step) === which);
     if (!hl) return undefined;
-    const k = `clip:v1:${matchId}:${hl.step}`;
+    const k = `clip:v2:${matchId}:${hl.step}`;
     const cached = await this.ctx.storage.get<{ meta: any; gif: Uint8Array; card: Uint8Array }>(k);
     if (cached) return cached;
-    const c = cfg(this.env), house = privateKeyToAccount(this.env.HOUSE_KEY as Hex).address.toLowerCase();
-    const names = h.players.map((a) => (!a || /^0x0{40}$/i.test(a) ? "" : a.toLowerCase() === house ? "TapeLog bot" : `${a.slice(0, 6)}…${a.slice(-4)}`)) as [string, string];
-    try { const lad: any = this.env.LADDER.get(this.env.LADDER.idFromName("ladder")); for (let i = 0; i < 2; i++) if (names[i] && names[i] !== "TapeLog bot") { const e = await lad.get(h.players[i]); if (e?.name) names[i] = e.name; } } catch {}
+    const names = await this.clipNames(h.players);
     const looks = [await this.lookOf(h.players[0]), await this.lookOf(h.players[1])] as [Look, Look];
     const steps = clipSteps(h, hl.step);
     const W = 420, frames: Uint8Array[] = [], delays: number[] = [];
@@ -135,7 +144,6 @@ export class Renderer extends DurableObject<Env> {
       await this.ctx.storage.put({ [k]: out, clipIndex: idx });
       if (drop.length) await this.ctx.storage.delete(drop);
     }
-    void c;
     return out;
   }
 

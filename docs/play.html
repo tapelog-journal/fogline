@@ -223,7 +223,7 @@ function show(j) {
   else { const won = v.winner === mySide, draw = v.winner === 2; st = draw ? "Draw" : won ? "🏆 You won!" : "You lost"; sub = `Match #${j.matchId} is over (${j.status ?? j.phase}). Start another one on the right.`; }
   $("status").textContent = st; $("sub").textContent = sub;
   const lines = [...(j.lastTurn ?? [])];
-  $("log").innerHTML = (lines.length ? lines.map(esc).join("\n") : "") + (j.txs?.length ? "\n" + j.txs.map((u) => `<a href="${esc(u)}" target="_blank">tx</a>`).join(" ") : "") + (j.watch ? `\n<a href="${esc(j.watch)}" target="_blank">Watch / replay this match</a>` : "");
+  $("log").innerHTML = (lines.length ? lines.map(esc).join("\n") : "") + (j.txs?.length ? "\n" + j.txs.map((u) => `<a href="${esc(u)}" target="_blank">tx</a>`).join(" ") : "") + (j.watch ? `\n<a href="${esc(j.watch)}" target="_blank">Watch / replay this match</a>` : "") + (j.next?.clip ? `\n<a class="clip" href="${esc(j.next.clip)}" target="_blank">🎬 ${["Settled", "Ended"].includes(j.phase) ? "Share the winning-moment clip" : "Share this capture as a clip"}</a>` : "");
   drawBoard();
   schedule();
 }

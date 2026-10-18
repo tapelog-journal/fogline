@@ -99,8 +99,8 @@ export function cardSvg(o: { frame: string; title: string; detail: string; match
 <rect x="${bw}" y="0" width="6" height="${H}" fill="#ffd400"/>
 <text x="${bw + 48}" y="92" font-size="30" font-weight="800" fill="#ffd400" letter-spacing="4">FOGLINE</text>
 <text x="${bw + 48}" y="124" font-size="18" font-weight="500" fill="#9a9a9a">Match #${esc(o.matchId)} · ply ${o.ply} · highlight</text>
-${wrap(o.title, 18).map((l, i) => `<text x="${bw + 48}" y="${212 + i * 58}" font-size="50" font-weight="800" fill="#ffffff">${esc(l)}</text>`).join("")}
-${wrap(o.detail, 34).map((l, i) => `<text x="${bw + 48}" y="${352 + i * 30}" font-size="22" font-weight="500" fill="#d8d8d8">${esc(l)}</text>`).join("")}
+${wrap(o.title, 20).map((l, i) => `<text x="${bw + 48}" y="${212 + i * 58}" font-size="50" font-weight="800" fill="#ffffff">${esc(l)}</text>`).join("")}
+${wrap(o.detail, 44).map((l, i) => `<text x="${bw + 48}" y="${352 + i * 30}" font-size="22" font-weight="500" fill="#d8d8d8">${esc(l)}</text>`).join("")}
 <text x="${bw + 48}" y="${452}" font-size="19" font-weight="500" fill="#bdbdbd">Side A: ${esc(o.names[0] || "—")}</text>
 <text x="${bw + 48}" y="${482}" font-size="19" font-weight="500" fill="#bdbdbd">Side B: ${esc(o.names[1] || "—")}</text>
 <rect x="${bw + 48}" y="${516}" width="226" height="46" rx="10" fill="#ffd400"/><text x="${bw + 161}" y="${546}" text-anchor="middle" font-size="19" font-weight="800" fill="#111">▶ Watch the clip</text>
