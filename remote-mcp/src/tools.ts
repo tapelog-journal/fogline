@@ -9,6 +9,8 @@ import { ALLOWED_CHAIN_ID, cfg, DISCLAIMER, FUNDING, watchLink, type Env } from 
 import { boardView, boardMd, LEGEND, MD_LEGEND, parseSquare, summary } from "./view";
 import { mdPage } from "./md";
 import { boardImageUrl, boardPageUrl } from "./boardimg";
+import { checkName } from "./api";
+import { ladder } from "./env";
 import { renderer } from "./env";
 import { b64 } from "./png";
 import { ITEMS } from "./cosmetics";
@@ -89,15 +91,15 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   server.registerTool("fogline_new_player", {
     title: "Create a Fogline player",
     description: `Use this once before playing. Creates a throwaway Base Sepolia TESTNET wallet managed by the server, funds it with a little test ETH for gas (${Number(FUNDING.grantWei) / 1e18} ETH) and 1000 fUSD test tokens, and returns a session id. Remember the session id and pass it to every other Fogline tool. Do not create a new player for every match; reuse the session.`,
-    inputSchema: { chainId: chainArg, board: z.string().regex(/^[a-z0-9]{8,24}$/).optional().describe("Optional board-link name from the user's pre-typed /v/NAME/N.png links (lets ChatGPT display board pictures).") }, annotations: WR,
-  }, async ({ chainId, board }) => {
+    inputSchema: { chainId: chainArg, board: z.string().regex(/^[a-z0-9]{8,24}$/).optional().describe("Optional board-link name from the user's pre-typed /v/NAME/N.png links (lets ChatGPT display board pictures)."), name: z.string().min(2).max(24).optional().describe("Optional public ladder handle the user chose (2-24 letters, digits, spaces, _ . -). Leave out unless the user picked one.") }, annotations: WR,
+  }, async ({ chainId, board, name }) => {
     try {
       checkChain(chainId);
       const bytes = crypto.getRandomValues(new Uint8Array(16));
       const session = "fl_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
       const r = await player(session).init(session, ip);
       if (board) { try { await player(session).setBoardAlias(board); } catch (e: any) { r.aliasError = String(e?.message ?? e); } }
-      try { await player(session).setProfile(undefined, "mcp"); } catch {}
+      try { await player(session).setProfile(name === undefined ? undefined : checkName(name), "mcp"); } catch {}
       return text(`New Fogline player created.\nsession: ${session}  (pass this to every Fogline tool)\nwallet: ${r.address} (Base Sepolia testnet, managed by the server)\n` +
         (r.funding.ok ? `funded with ${r.funding.amountEth} test ETH: ${r.funding.url}\n` : `NOT funded: ${r.funding.reason}. You can still watch and read state, but cannot send moves until funded.\n`) +
         (r.faucet ? `1000 fUSD test tokens: ${r.faucet.url}\n` : "") + `\nNext: fogline_play_bot to play the TapeLog house bot.`);
@@ -188,6 +190,18 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
     inputSchema: { session: sessionArg, matchId: matchArg }, annotations: { ...WR, destructiveHint: true }, _meta: boardToolMeta("Resigning…", "Resigned"),
   }, async ({ session, matchId }) => {
     try { return await boardResult(env, await player(session).resign(String(matchId)), "You resigned.\n\n", origin); } catch (e) { return err(e); }
+  });
+
+  server.registerTool("fogline_ladder", {
+    title: "Show the Fogline ladder",
+    description: "Use this when the user asks about rankings, the leaderboard or ratings. Public Elo ladder of players (agents and humans) from matches that settled onchain on Base Sepolia testnet.",
+    inputSchema: {}, annotations: RO,
+  }, async () => {
+    try {
+      const t = await ladder(env).top(20);
+      const rows = t.players.map((e: any, i: number) => `${i + 1}. ${e.name ?? e.address.slice(0, 6) + "…" + e.address.slice(-4)} · ${e.rating} · ${e.w}-${e.l}-${e.d} · ${e.client}`);
+      return text(`Fogline ladder (Elo, start 1200; client kind is self-reported):\n${rows.join("\n") || "no rated matches yet"}\n\nPage: https://tapelog-journal.github.io/fogline/ladder.html`);
+    } catch (e) { return err(e); }
   });
 
   server.registerTool("fogline_cosmetics", {

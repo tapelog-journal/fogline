@@ -9,7 +9,7 @@ import { combatNote, gameCall, matchIdFrom, mockUsdcAbi, narrate, pub, readState
 import { cfg, DEFAULT_TURN_TIMEOUT, txLink, watchLink, type Env } from "./env";
 import { Mutex, nonceStore } from "./store";
 import { boardMd, boardView, coord, diffEvents, groupMoves, sideOf, summary, type LastMove } from "./view";
-import { DEFAULT_LOOK_PAIR, renderer } from "./env";
+import { DEFAULT_LOOK_PAIR, ladder, renderer } from "./env";
 import { sceneFrom } from "./render";
 import { viewToken } from "./boardimg";
 import { cosmeticsCall, findItem, ITEMS, ownedBy } from "./cosmetics";
@@ -22,6 +22,7 @@ const out = (t: SentTx): TxOut => ({ fn: t.fn, hash: t.hash, url: txLink(t.hash)
 
 export class Player extends DurableObject<Env> {
   private lock = new Mutex();
+  private ladderSynced = false;
 
   private async key(): Promise<Hex> {
     const k = await this.ctx.storage.get<Hex>("key");
@@ -71,6 +72,7 @@ export class Player extends DurableObject<Env> {
     const cur = (await this.ctx.storage.get<{ name?: string; client?: string }>("profile")) ?? {};
     const next = { name: name === undefined ? cur.name : name || undefined, client: client ?? cur.client };
     await this.ctx.storage.put("profile", next);
+    try { await ladder(this.env).register(address, next.name ?? "", next.client); } catch (e) { console.log("ladder register failed", String(e).slice(0, 120)); }
     return { address, ...next };
   }
   async profile() { return { address: await this.address(), ...((await this.ctx.storage.get<{ name?: string; client?: string }>("profile")) ?? {}) }; }
@@ -272,6 +274,8 @@ export class Player extends DurableObject<Env> {
     const v = boardView(s, side, l), sm = summary(s, side);
     const legal = v.moves.map((m) => ({ from: m.from, to: m.to, fromSq: coord(m.from), toSq: coord(m.to), piece: l ? RANK_NAMES[l.ranks[m.pieceIndex]] : undefined, attack: m.attack }));
     const scene = sceneFrom(s, side, l, DEFAULT_LOOK_PAIR());
+    if (!this.ladderSynced) { this.ladderSynced = true; this.ctx.waitUntil((async () => { const pr = await this.ctx.storage.get<{ name?: string; client?: string }>("profile"); if (pr) await ladder(this.env).register(await this.address(), pr.name ?? "", pr.client); })().catch(() => {})); }
+    if (s.match.phase === Phase.Settled) this.ctx.waitUntil(ladder(this.env).check(s.id.toString()).catch(() => {}) as Promise<any>);
     return {
       scene, players: [s.match.players[0], s.match.players[1]] as [string, string], block: s.block?.toString() ?? "0",
       viewToken: side >= 0 ? await viewToken(this.env, this.ctx.id.toString(), s.id.toString()) : undefined,

@@ -74,6 +74,7 @@ Optional parameters:
 - `wallet` shows balances.
 - `new-player` also takes `client=skill` (please send it: it tells the ladder which kind of client you are; the server doesn't track anything else) and an optional `name=HANDLE` (2–24 characters, shown publicly on the ladder; only use a name the user picked).
 - Game responses also include `view` (a structured board with fog of war applied: `cells` with square, side and rank or `null` if hidden, `lost`, `last`, `deadline`) and `moves` (`{from, to, piece, attack}`) for UIs.
+- **Ladder:** `ladder` (no session needed) returns the public Elo ladder of agents and humans, rated from matches that settled onchain. `set-name&name=HANDLE` sets or changes the player's public handle (`name=` with nothing clears it). Only use a handle the user chose, never their real name unless they ask. Page: https://tapelog-journal.github.io/fogline/ladder.html
 - `link-board&board=NAME` links the user's pre-typed board picture links (`/v/NAME/1.png` … `/40.png`) to this player. Same as `new-player?board=NAME`. NAME is 8–24 lowercase letters/digits.
 - `cosmetics` lists the 22 decorative items and the ones the player owns. `buy-cosmetic&item=ID` buys one with valueless test fUSD (skipped if already owned) and equips skins and tabletops. Owned skins, tabletops, fog styles, trails, effects and victory banners are drawn in the board picture. Decorative only: zero gameplay effect.
 

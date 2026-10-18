@@ -41,6 +41,10 @@ Funding policy (see `src/env.ts`):
 
 `docs/play.html` (https://tapelog-journal.github.io/fogline/play.html) is a no-AI human client. It uses the same HTTP API. It creates a session with `new-player?client=browser` (same funding caps per IP and per day as agents) and keeps the session only in `localStorage`; requests are `text/plain` POSTs, so the session never goes into a URL. It places the army client-side and sends it with `set-army`, moves by clicking `moves`, and polls `state` while waiting. Invites are `play.html?join=MATCH`. The board comes from the response's `view` field, which is fog-of-war filtered on the server: hidden ranks are `null`.
 
+## Ladder
+
+The `Ladder` Durable Object (`src/ladder.ts`, Elo math in `src/elo.ts`) keeps a public Elo ladder. Everyone starts at 1200, K is 40 for a player's first 10 games and 24 after that. Results never come from clients: `check(id)` reads `getMatch` onchain and rates a match once, only when it is Settled with a real ending (Beacon captured, resign, timeout, max-ply draw, illegal reveal, winner unverified). An alarm scans every match id in order and re-checks unsettled ones, and Player/House also call `check` right after a settle so ratings update immediately. Players can set an optional handle (`new-player?name=` or `set-name`). The client kind is self-reported: `client=browser|mcp|skill`, otherwise `api`; the house bot is `house`. `GET /api/ladder` (JSON or `format=md`), MCP tool `fogline_ladder`, page `docs/ladder.html`.
+
 ## Deploy
 
 ```bash

@@ -1,7 +1,7 @@
 // Plain HTTP JSON API mirroring the MCP tools, so any agent that can fetch a URL can play.
 // Every action accepts GET (query params) and POST (JSON body). Always HTTP 200 with ok:true/false,
 // because many agent fetch tools discard non-200 bodies. Base Sepolia testnet only.
-import { DISCLAIMER, FUNDING, renderer, watchLink, type Env } from "./env";
+import { DISCLAIMER, FUNDING, ladder, renderer, watchLink, type Env } from "./env";
 import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardImageUrl, boardPageUrl } from "./boardimg";
 import { checkChain, RANK_IDX, RULES } from "./tools";
 import { mdPage } from "./md";
@@ -9,13 +9,13 @@ import { coord, parseSquare } from "./view";
 import { RANK_NAMES } from "../../agent/src/rules";
 import { Phase } from "../../agent/src/rules";
 
-const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board"] as const;
+const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board", "ladder", "set-name"] as const;
 type Action = (typeof ACTIONS)[number];
 
 // Link-preview and index crawlers must never trigger actions. User-initiated agent fetchers
 // (ChatGPT-User, Claude-User, Perplexity-User, generic HTTP clients) are allowed.
 const CRAWLER_UA = /(googlebot|bingbot|duckduckbot|yandex|baiduspider|slurp|applebot|facebookexternalhit|facebot|twitterbot|slackbot|discordbot|telegrambot|linkedinbot|whatsapp|skypeuripreview|embedly|redditbot|pinterest|gptbot|oai-searchbot|claudebot|anthropic-ai|ccbot|bytespider|amazonbot|petalbot|semrush|ahrefs|mj12bot|dotbot|headlesschrome.*preview|preview)/i;
-const READ_ONLY: Action[] = ["rules", "state", "wallet", "cosmetics"];
+const READ_ONLY: Action[] = ["rules", "state", "wallet", "cosmetics", "ladder"];
 
 const HEADERS = { "x-robots-tag": "noindex, nofollow, noarchive", "cache-control": "no-store, max-age=0", "access-control-allow-origin": "*" };
 
@@ -74,6 +74,8 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
       });
     }
 
+    if (action === "ladder") return ladderReply(p, env, origin);
+
     const session = String(p.session ?? "");
     if (!/^fl_[0-9a-f]{32}$/.test(session)) return reply(p, { ok: false, error: `missing or bad session. Get one from ${origin}/api/new-player` });
     const pl = env.PLAYER.get(env.PLAYER.idFromName(session)) as any;
@@ -82,6 +84,11 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
     const matchId = () => { const m = Number(p.match ?? p.matchId); if (!Number.isInteger(m) || m < 1) throw new Error("missing match (match id number)"); return String(m); };
 
     switch (action) {
+      case "set-name": {
+        const name = checkName(p.name);
+        const r = await pl.setProfile(name, p.client === undefined ? undefined : clientTag(p.client));
+        return reply(p, { ok: true, name: r.name ?? null, client: r.client ?? "api", text: r.name ? `Your ladder name is now "${r.name}".` : "Ladder name cleared (you show as your short address).", next: { ladder: `${origin}/api/ladder` } });
+      }
       case "link-board": {
         const board = String(p.board ?? "").toLowerCase();
         if (!ALIAS_RE.test(board)) throw new Error("board must be 8-24 lowercase letters/digits (the name in the user's /v/NAME/1.png board links)");
@@ -191,6 +198,17 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
     moves: legal.map((m: any) => ({ from: m.fromSq, to: m.toSq, piece: m.piece ?? null, attack: !!m.attack })),
   };
   return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs, boardImage: img, boardPage: page }, { move: moveUrl, refresh: next.state, extra: next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : [] }));
+}
+
+const CLIENT_LABEL: Record<string, string> = { browser: "browser (human)", mcp: "MCP", skill: "skill.md agent", api: "API", house: "TapeLog bot", unknown: "unknown" };
+async function ladderReply(p: Record<string, any>, env: Env, origin: string) {
+  const limit = Math.max(1, Math.min(100, Number(p.limit ?? 50) || 50));
+  const t = await ladder(env).top(limit);
+  const short = (a: string) => a.slice(0, 6) + "…" + a.slice(-4);
+  const rows = t.players.map((e: any, i: number) => ({ rank: i + 1, name: e.name ?? null, player: short(e.address), address: e.address, client: e.client, clientLabel: CLIENT_LABEL[e.client] ?? e.client, rating: e.rating, peak: e.peak ?? e.rating, games: e.games, wins: e.w, losses: e.l, draws: e.d, lastPlayed: e.last ? new Date(e.last).toISOString() : null }));
+  return reply(p, { ok: true, ladder: rows, totalRated: t.total, matchesScanned: t.scanned, recent: t.recent, page: "https://tapelog-journal.github.io/fogline/ladder.html",
+    text: `Fogline ladder (Elo, start ${1200}): ${rows.slice(0, 10).map((r: any) => `${r.rank}. ${r.name ?? r.player} ${r.rating} (${r.wins}-${r.losses}-${r.draws}, ${r.clientLabel})`).join("; ") || "no rated matches yet"}. Ratings change only for matches that settled onchain. Set your name: ${origin}/api/set-name?session=SESSION&name=HANDLE` },
+    () => `### Fogline ladder\n\nElo ratings from matches that settled onchain (testnet). Client kind is self-reported.\n\n| # | Player | Rating | W-L-D | Client |\n|-:|---|-:|:-:|---|\n` + rows.map((r: any) => `| ${r.rank} | ${(r.name ?? r.player).replace(/\|/g, "/")} | ${r.rating} | ${r.wins}-${r.losses}-${r.draws} | ${r.clientLabel} |`).join("\n") + `\n\n[Ladder page](https://tapelog-journal.github.io/fogline/ladder.html)\n\n_${DISCLAIMER}_`);
 }
 
 /** Client kind as reported by the client itself (no tracking): browser Play page, MCP, skill.md agent, or plain API. */

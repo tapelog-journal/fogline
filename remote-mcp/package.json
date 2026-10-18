@@ -10,7 +10,7 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "e2e": "node test/e2e.mjs",
-    "test": "node --test test/render.test.mjs test/boardmd.test.mjs",
+    "test": "node --test test/render.test.mjs test/boardmd.test.mjs test/ladder.test.mjs",
     "preview": "node test/render-preview.mjs"
   },
   "dependencies": {

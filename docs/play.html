@@ -47,7 +47,7 @@
 <header>
   <h1><span>Fogline</span> by TapeLog</h1>
   <div class="tag">Play in your browser. No AI needed. Base Sepolia testnet only.</div>
-  <nav><a href="./">Watch</a><a href="./play.html" class="on">▶ Play</a></nav>
+  <nav><a href="./">Watch</a><a href="./play.html" class="on">▶ Play</a><a href="./ladder.html">Ladder</a></nav>
 </header>
 <main>
   <section>
@@ -70,6 +70,7 @@
       </div>
       <div id="haveSession" class="hidden">
         <div>Player <a id="addr" target="_blank"></a> <span id="who" class="tag"></span></div>
+        <div class="row"><input id="ladderName" maxlength="24" placeholder="Ladder name (optional)"><button id="saveName">Save name</button><a href="./ladder.html" class="tag">see the ladder</a></div>
         <div class="row"><button id="forget">Forget this player on this device</button></div>
       </div>
     </div>
@@ -270,6 +271,10 @@ $("claimBtn").onclick = () => act("Checking that session…", async () => {
   await wallet();
 });
 $("forget").onclick = () => { if (!confirm("Forget this test player on this device? You can't get it back unless you saved the session.")) return; localStorage.removeItem(K.session); localStorage.removeItem(K.match); cur = null; army = null; drawEmpty(); sessionUI(); };
+$("saveName").onclick = () => act("Saving your ladder name…", async () => {
+  const r = await call("set-name", { name: $("ladderName").value.trim(), client: "browser" });
+  $("sub").textContent = r.text;
+});
 $("playBot").onclick = () => act("Creating a match against the TapeLog bot (two testnet transactions)…", async () => {
   if (!sess()) throw new Error("get a free test player first");
   const r = await call("play-bot", { ref: "web-" + Date.now().toString(36) });

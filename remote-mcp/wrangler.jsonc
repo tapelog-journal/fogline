@@ -27,11 +27,13 @@
       { "name": "HOUSE", "class_name": "House" },
       { "name": "FUNDER", "class_name": "Funder" },
       { "name": "SSE", "class_name": "SseSession" },
-      { "name": "RENDER", "class_name": "Renderer" }
+      { "name": "RENDER", "class_name": "Renderer" },
+      { "name": "LADDER", "class_name": "Ladder" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Player", "House", "Funder", "SseSession"] },
-    { "tag": "v2", "new_sqlite_classes": ["Renderer"] }
+    { "tag": "v2", "new_sqlite_classes": ["Renderer"] },
+    { "tag": "v3", "new_sqlite_classes": ["Ladder"] }
   ]
 }

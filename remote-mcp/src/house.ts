@@ -7,7 +7,7 @@ import { decide } from "../../agent/src/bot";
 import { commitments, randomLayout, type Layout } from "../../agent/src/layout";
 import { Phase, PIECES } from "../../agent/src/rules";
 import { gameCall, pub, readState, sendTx, tokenCall } from "./chain";
-import { cfg, MAX_HOUSE_MATCHES, type Env } from "./env";
+import { cfg, ladder, MAX_HOUSE_MATCHES, type Env } from "./env";
 import { nonceStore } from "./store";
 
 interface HouseMatch { session?: string; layout?: Layout; added: number; log: string[]; minBlock?: string }
@@ -91,7 +91,7 @@ export class House extends DurableObject<Env> {
     const s = await readState(c.rpcUrl, c.game, id, hm.minBlock ? BigInt(hm.minBlock) : undefined);
     const mm = s.match;
     if (mm.phase === Phase.None) return { nextMs: 3000, remove: Date.now() - hm.added > 120_000 };
-    if (mm.phase === Phase.Settled) return { nextMs: 0, remove: true };
+    if (mm.phase === Phase.Settled) { try { await ladder(this.env).check(idStr); } catch (e) { console.log("ladder check failed", String(e).slice(0, 120)); } return { nextMs: 0, remove: true }; }
     if (mm.phase === Phase.Open) {
       const p1 = mm.players[1].toLowerCase();
       if (mm.players[0].toLowerCase() === me || (p1 !== me && p1 !== "0x0000000000000000000000000000000000000000")) return { nextMs: 0, remove: true };
@@ -134,6 +134,7 @@ export class House extends DurableObject<Env> {
         const l = hm.layout!;
         const r = await this.tx("verifyLayout", gameCall("verifyLayout", [id, l.ranks, l.salts]));
         hm.log.push(`house verified its army and settled (${r.hash})`);
+        try { await ladder(this.env).check(idStr); } catch (e) { console.log("ladder check failed", String(e).slice(0, 120)); }
         return { nextMs: 0, remove: true };
       }
       case "claimTimeout": {

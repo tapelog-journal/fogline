@@ -18,6 +18,7 @@ export { House } from "./house";
 export { Funder } from "./funder";
 export { SseSession } from "./sse";
 export { Renderer } from "./renderer";
+export { Ladder } from "./ladder";
 
 const CORS = {
   "access-control-allow-origin": "*",
