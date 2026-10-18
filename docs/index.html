@@ -14,15 +14,17 @@
   main { display:grid; grid-template-columns:minmax(320px,640px) minmax(320px,1fr); gap:24px; padding:20px 24px; max-width:1400px }
   @media (max-width:980px){ main { grid-template-columns:1fr } }
   #stage { position:relative; border-radius:14px; overflow:hidden; padding:7% 9%; background:#111 center/cover no-repeat; box-shadow:0 10px 40px rgba(0,0,0,.6) }
-  #boardwrap { position:relative; border-radius:10px; padding:10px; border:3px solid var(--frame,#333); background:rgba(0,0,0,.25); backdrop-filter:blur(1.5px); box-shadow:0 12px 30px rgba(0,0,0,.55), inset 0 0 30px rgba(0,0,0,.35) }
-  #board { display:grid; grid-template-columns:repeat(8,1fr); gap:0; position:relative }
-  .cell { aspect-ratio:1; position:relative; display:flex; align-items:center; justify-content:center; border:1px solid var(--line) }
+  #boardwrap { position:relative; width:max-content; margin:0 auto; border-radius:10px; padding:10px; border:3px solid var(--frame,#333); background:rgba(0,0,0,.25); backdrop-filter:blur(1.5px); box-shadow:0 12px 30px rgba(0,0,0,.55), inset 0 0 30px rgba(0,0,0,.35) }
+  /* fixed integer cell size (set by sizeBoard) so all 64 squares are identical and content can never resize them */
+  #board { --cell:56px; display:grid; grid-template-columns:repeat(8,var(--cell)); grid-template-rows:repeat(8,var(--cell)); gap:0; width:calc(var(--cell) * 8); height:calc(var(--cell) * 8); position:relative }
+  #board::after { content:""; position:absolute; inset:0; border-right:1px solid var(--line); border-bottom:1px solid var(--line); pointer-events:none; z-index:3 }
+  .cell { width:var(--cell); height:var(--cell); position:relative; overflow:visible; box-shadow:inset 1px 1px 0 var(--line); contain:size layout }
   .cell.l { background:var(--light) } .cell.d { background:var(--dark) }
-  .cell small { position:absolute; top:1px; left:3px; font-size:9px; color:var(--label); opacity:.7; z-index:2 }
-  .piece { width:86%; height:86%; display:flex; transition:transform .15s }
-  .piece svg { width:100%; height:100% }
-  .cell.last { box-shadow:inset 0 0 0 2px var(--acc) }
-  .fogbank svg { width:96%; height:96%; opacity:.85 }
+  .cell small { position:absolute; top:1px; left:3px; font-size:9px; line-height:1; color:var(--label); opacity:.7; z-index:2; pointer-events:none }
+  .piece { position:absolute; inset:7%; transition:transform .15s }
+  .piece svg { position:absolute; inset:0; width:100%; height:100%; display:block }
+  .cell.last { box-shadow:inset 1px 1px 0 var(--line), inset 0 0 0 2px var(--acc) }
+  .fogbank svg { position:absolute; inset:2%; width:96%; height:96%; opacity:.85 }
   .panel { background:#121212; border:1px solid #222; border-radius:10px; padding:14px 16px; margin-bottom:14px }
   .panel h2 { margin:0 0 8px; font-size:16px; color:var(--acc) }
   input,button,select { background:#1b1b1b; color:var(--fg); border:1px solid #333; border-radius:6px; padding:6px 8px; font:inherit }
@@ -275,6 +277,16 @@ $("loadLive").onclick = async () => {
   clearInterval(timer); await tick(); timer = setInterval(tick, 4000);
 };
 
+// integer cell size from the space the stage gives the board (and the viewport height on desktop)
+function sizeBoard() {
+  const st = $("stage"), cs = getComputedStyle(st), bw = getComputedStyle($("boardwrap"));
+  const inner = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const chrome = parseFloat(bw.paddingLeft) + parseFloat(bw.paddingRight) + parseFloat(bw.borderLeftWidth) + parseFloat(bw.borderRightWidth);
+  const maxByHeight = window.innerWidth > 980 ? window.innerHeight * 0.82 : Infinity;
+  const cell = Math.max(24, Math.floor((Math.min(inner, maxByHeight) - chrome) / 8));
+  $("board").style.setProperty("--cell", cell + "px");
+}
+new ResizeObserver(sizeBoard).observe($("stage")); addEventListener("resize", sizeBoard); sizeBoard();
 applyTable(); renderPicker(); renderLegend();
 if (q.get("tab")) { tab = q.get("tab"); renderPicker(); }
 if (q.get("game")) { $("game").value = q.get("game"); if (q.get("rpc")) $("rpc").value = q.get("rpc"); if (q.get("match")) $("mid").value = q.get("match"); $("loadLive").click(); }

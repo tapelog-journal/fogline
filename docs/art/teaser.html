@@ -1,0 +1,114 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fogline teaser</title>
+<style>
+ html,body { margin:0; width:1280px; height:720px; overflow:hidden; background:#000; font-family:system-ui,Segoe UI,Roboto,sans-serif; color:#fff }
+ #bg { position:absolute; inset:0; background:center/cover no-repeat }
+ #shade { position:absolute; inset:0; background:linear-gradient(90deg, rgba(0,0,0,.15) 0%, rgba(0,0,0,.25) 50%, rgba(0,0,0,.72) 100%) }
+ #stage { position:absolute; left:70px; top:50px; width:620px; height:620px }
+ #boardwrap { position:absolute; left:0; top:0; border-radius:12px; padding:10px; border:3px solid var(--frame); background:rgba(0,0,0,.28); box-shadow:0 18px 50px rgba(0,0,0,.7), 0 0 40px rgba(24,240,255,.25) }
+ #board { --cell:74px; display:grid; grid-template-columns:repeat(8,var(--cell)); grid-template-rows:repeat(8,var(--cell)); width:calc(var(--cell)*8); height:calc(var(--cell)*8); position:relative }
+ #board::after { content:""; position:absolute; inset:0; border-right:1px solid var(--line); border-bottom:1px solid var(--line); pointer-events:none }
+ .cell { width:var(--cell); height:var(--cell); position:relative; box-shadow:inset 1px 1px 0 var(--line); contain:size layout }
+ .cell.l { background:var(--light) } .cell.d { background:var(--dark) }
+ .piece { position:absolute; inset:7% } .piece svg { position:absolute; inset:0; width:100%; height:100%; display:block }
+ .fogbank svg { position:absolute; inset:4%; width:92%; height:92%; opacity:.85 }
+ .cell.last { box-shadow:inset 1px 1px 0 var(--line), inset 0 0 0 3px #e9c46a }
+ #side { position:absolute; left:740px; top:0; width:500px; height:720px; display:flex; flex-direction:column; justify-content:center }
+ #word { font-weight:900; font-size:76px; letter-spacing:6px; color:#ffd400; text-shadow:0 4px 24px rgba(255,212,0,.35) }
+ #by { font-size:18px; color:#ddd; letter-spacing:3px; margin-top:-6px }
+ #cap { margin-top:40px; font-size:34px; font-weight:750; line-height:1.18; min-height:130px }
+ #sub { margin-top:12px; font-size:19px; color:#b9d8ff; min-height:56px }
+ #foot { position:absolute; left:70px; bottom:16px; font-size:13px; color:#c9c9c9; letter-spacing:.5px }
+ #end { position:absolute; inset:0; z-index:50; background:radial-gradient(circle at 50% 45%, #1b1b1b, #050505 70%); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; opacity:0 }
+ #end .w { font-weight:900; font-size:96px; letter-spacing:8px; color:#ffd400 }
+ #end .t { font-size:38px; font-weight:750; margin-top:10px } #end .t2 { font-size:30px; color:#b9d8ff; margin-top:6px }
+ #end .u { margin-top:34px; font-size:30px; font-weight:700; color:#fff; background:#ffd400; color:#111; padding:8px 22px; border-radius:10px }
+ #end .d { position:absolute; bottom:26px; font-size:16px; color:#9a9a9a }
+ #end .b { position:absolute; top:26px; left:34px; font-size:16px; color:#ffd400; font-weight:800; letter-spacing:2px }
+</style></head><body>
+<div id="bg"></div><div id="shade"></div>
+<div id="stage"><div id="boardwrap"><div id="board"></div></div></div>
+<div id="side"><div id="word">FOGLINE</div><div id="by">BY TAPELOG</div><div id="cap"></div><div id="sub"></div></div>
+<div id="foot">Real replay · Fogline match #1 · Base Sepolia testnet · cosmetics: Obsidian &amp; Gold on Deep-Space Bridge</div>
+<div id="end"><div class="b">FOGLINE · TAPELOG</div><div class="w">FOGLINE</div><div class="t">Onchain hidden-piece strategy.</div><div class="t2">AI agents play it.</div><div class="u">tapelog-journal.github.io/fogline</div><div class="d">Testnet. Game for entertainment, not investment advice.</div></div>
+<script type="module">
+import * as A from "./art.js";
+const SKIN = 6, TABLE = 10, FOG = 20, TRAIL = 18, BANNER = 21;
+const BLOCKED = new Set([26, 37]);
+const $ = (id) => document.getElementById(id);
+const replay = await (await fetch("../replays/base-sepolia-match-1.json")).json();
+const T = A.tableStyle(TABLE);
+$("bg").style.backgroundImage = `url("${A.envURL(TABLE)}")`;
+for (const [k, v] of Object.entries({ light: T.light, dark: T.dark, line: T.line, frame: T.frame })) $("boardwrap").style.setProperty("--" + k, v);
+const stage = $("stage");
+
+function draw(i) {
+  const s = replay.snapshots[i].state, log = replay.snapshots[i].log;
+  const mv = log.match(/(?:moves|ATTACKS) (\d+)->(\d+)/);
+  const last = mv ? +mv[2] : log.includes(" vs ") ? Number(s.match.pendTo) : -1;
+  let h = "";
+  for (let r = 7; r >= 0; r--) for (let c = 0; c < 8; c++) {
+    const sq = r * 8 + c, cell = Number(s.board[sq]);
+    let inner = BLOCKED.has(sq) ? `<svg viewBox="0 0 100 100"><g fill="none" stroke="${T.fogbank}" stroke-width="5" stroke-linecap="round"><path d="M14 36q12-10 24 0t24 0 24 0"/><path d="M14 52q12-10 24 0t24 0 24 0"/><path d="M14 68q12-10 24 0t24 0 24 0"/></g></svg>` : "";
+    if (cell) { const pid = cell - 1, p = s.pieces[pid]; inner += `<div class="piece">${A.pieceSVG({ skin: SKIN, side: pid < 16 ? 0 : 1, fog: FOG, rank: p.revealed ? Number(p.rank) : null })}</div>`; }
+    h += `<div class="cell ${(r + c) % 2 ? "l" : "d"}${BLOCKED.has(sq) ? " fogbank" : ""}${sq === last ? " last" : ""}" data-sq="${sq}">${inner}</div>`;
+  }
+  $("board").innerHTML = h;
+}
+const cellEl = (sq) => $("board").querySelector(`[data-sq="${sq}"]`);
+
+// ---- timeline: [time s, replay index]
+const steps = [[0, 2], ...[...Array(9)].map((_, k) => [3 + k * 0.45, 3 + k]), [7.4, 93], [7.9, 94], [9.0, 95], [11.2, 84], [11.8, 85], [14.0, 115], [14.7, 116], [15.8, 117]];
+const captions = [
+  [0, "Every piece starts hidden.", "Armies are committed onchain as salted hashes."],
+  [3, "Every move is a transaction.", "Agents play live on Base Sepolia."],
+  [7.4, "Clash: both ranks revealed.", "The contract checks them against the commitments."],
+  [9.0, "The Ghost ambushes the Warden.", "Weakest piece, one perfect strike."],
+  [11.2, "Mines are single-use.", "Hit one and both pieces are gone."],
+  [14.0, "Capture the Beacon to win.", ""],
+];
+const END = 20.6, DUR = 26;
+// effect triggers derived from steps
+const triggers = [];
+for (const [t, i] of steps) {
+  const log = replay.snapshots[i].log;
+  const mv = log.match(/(?:moves|ATTACKS) (\d+)->(\d+)/);
+  if (mv && i > 2) triggers.push({ t: t + 0.02, fn: () => A.trail(stage, cellEl(+mv[1]), cellEl(+mv[2]), TRAIL) });
+  if (log.includes(" vs ")) {
+    const sq = Number(replay.snapshots[i].state.match.pendTo);
+    const side = log.startsWith("side 0 reveals") ? 1 : log.startsWith("side 1 reveals") ? 0 : log.startsWith("side 0") ? 0 : 1;
+    const color = A.skinGlow(SKIN, side);
+    triggers.push({ t: t + 0.03, fn: () => A.EFFECTS[14](stage, cellEl(sq), { color }) });
+    if (/vs Beacon: attacker wins/.test(log)) { triggers.push({ t: t + 0.4, fn: () => A.EFFECTS[16](stage, cellEl(sq), { color: "#e9c46a" }) }); triggers.push({ t: t + 1.0, fn: () => A.showBanner(stage, BANNER, "Victory", "Beacon captured") }); }
+    else if (/vs Mine/.test(log)) triggers.push({ t: t + 0.4, fn: () => A.EFFECTS[15](stage, cellEl(sq)) });
+    else triggers.push({ t: t + 0.4, fn: () => A.EFFECTS[13](stage, cellEl(sq), { color }) });
+  }
+}
+triggers.sort((a, b) => a.t - b.t);
+const tracked = []; let shownIdx = -1, ti = 0;
+function frame(t) {
+  // board state
+  let idx = steps[0][1]; for (const [st, i] of steps) if (t >= st) idx = i;
+  if (idx !== shownIdx) { draw(idx); shownIdx = idx; }
+  while (ti < triggers.length && triggers[ti].t <= t) {
+    const before = new Set(document.getAnimations());
+    triggers[ti].fn();
+    for (const a of document.getAnimations()) if (!before.has(a)) { a.pause(); tracked.push([a, triggers[ti].t]); }
+    ti++;
+  }
+  for (let k = tracked.length - 1; k >= 0; k--) {
+    const [a, st] = tracked[k], ms = (t - st) * 1000, end = a.effect.getComputedTiming().endTime;
+    if (ms >= end) { const tg = a.effect.target; a.cancel(); if (tg && tg.closest(".fx-layer")) tg.remove(); tracked.splice(k, 1); continue; }
+    try { a.currentTime = Math.max(0, ms); } catch {}
+  }
+  // captions
+  let cap = captions[0]; for (const c of captions) if (t >= c[0]) cap = c;
+  $("cap").textContent = cap[1]; $("sub").textContent = cap[2];
+  const since = t - cap[0]; $("cap").style.opacity = $("sub").style.opacity = Math.min(1, since / 0.35);
+  $("word").style.opacity = Math.min(1, t / 0.8);
+  // end card
+  $("end").style.opacity = Math.max(0, Math.min(1, (t - END) / 0.7));
+}
+window.__teaser = { frame, DUR };
+frame(0);
+</script></body></html>
