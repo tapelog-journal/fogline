@@ -7,7 +7,9 @@ import { lastActions } from "./chain";
 import { lookFrom, ownedBy } from "./cosmetics";
 import { cfg, type Env } from "./env";
 import { boardSvg, envSvg, tableOf, type BoardScene, type Look } from "./render";
-import { b64, svgToPng } from "./png";
+import { b64, svgToPng, svgToRgba } from "./png";
+import { actionOf, cardSvg, clipSteps, encodeGif, findHighlights, type Highlight } from "./clips";
+import { sceneFrom } from "./render";
 import { sha256Hex } from "./store";
 import { GAME_DEPLOY_BLOCK, head, loadHistory, scanCreated, type History } from "./history";
 
@@ -74,6 +76,67 @@ export class Renderer extends DurableObject<Env> {
   /** A previously rendered picture by content hash (undefined if evicted). */
   async cached(hash: string): Promise<Uint8Array | undefined> {
     return /^[0-9a-f]{32}$/.test(hash) ? this.ctx.storage.get<Uint8Array>(`png:${hash}`) : undefined;
+  }
+
+  // ------------------------------------------------------------------ highlight clips (sharded by match)
+  private clipBusy = new Map<string, Promise<any>>();
+  private async hist(matchId: string) { return this.env.RENDER.get(this.env.RENDER.idFromName("history")).history(matchId); }
+
+  async highlights(matchId: string): Promise<{ done: boolean; players: string[]; items: Highlight[] }> {
+    const h = await this.hist(matchId);
+    return { done: h.done, players: h.players, items: findHighlights(h) };
+  }
+
+  /** GIF + share card for one highlight. `which` = step number, "win" or "last". Cached in storage once the match is over. */
+  async clip(matchId: string, which: string): Promise<{ meta: Highlight & { matchId: string; names: [string, string] }; gif: Uint8Array; card: Uint8Array } | undefined> {
+    const key = `${matchId}:${which}`;
+    const busy = this.clipBusy.get(key);
+    if (busy) return busy;
+    const p = this.makeClip(matchId, which).finally(() => this.clipBusy.delete(key));
+    this.clipBusy.set(key, p);
+    return p;
+  }
+  private async makeClip(matchId: string, which: string) {
+    const h = await this.hist(matchId);
+    const items = findHighlights(h);
+    const hl = which === "win" ? items.find((x) => x.kind === "win") : which === "last" ? items[items.length - 1] : items.find((x) => String(x.step) === which);
+    if (!hl) return undefined;
+    const k = `clip:v1:${matchId}:${hl.step}`;
+    const cached = await this.ctx.storage.get<{ meta: any; gif: Uint8Array; card: Uint8Array }>(k);
+    if (cached) return cached;
+    const c = cfg(this.env), house = privateKeyToAccount(this.env.HOUSE_KEY as Hex).address.toLowerCase();
+    const names = h.players.map((a) => (!a || /^0x0{40}$/i.test(a) ? "" : a.toLowerCase() === house ? "TapeLog bot" : `${a.slice(0, 6)}…${a.slice(-4)}`)) as [string, string];
+    try { const lad: any = this.env.LADDER.get(this.env.LADDER.idFromName("ladder")); for (let i = 0; i < 2; i++) if (names[i] && names[i] !== "TapeLog bot") { const e = await lad.get(h.players[i]); if (e?.name) names[i] = e.name; } } catch {}
+    const looks = [await this.lookOf(h.players[0]), await this.lookOf(h.players[1])] as [Look, Look];
+    const steps = clipSteps(h, hl.step);
+    const W = 420, frames: Uint8Array[] = [], delays: number[] = [];
+    let height = 0, keyPng: Uint8Array | undefined;
+    const env = await this.envImage(looks[0].table);
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i], last = actionOf(s);
+      const sc = sceneFrom(s.state as any, -1, undefined, [looks[0], looks[1]], last);
+      sc.names = names;
+      const svg = boardSvg(sc, { envImage: env });
+      const px = await svgToRgba(svg, W);
+      frames.push(px.data); height = px.height;
+      const isKey = i === steps.length - 1;
+      delays.push(isKey ? 2600 : i === 0 ? 900 : 750);
+      if (isKey) keyPng = await svgToPng(svg, 530);
+    }
+    if (!frames.length || !keyPng) return undefined;
+    const gif = encodeGif(frames, W, height, delays);
+    const card = await svgToPng(cardSvg({ frame: "data:image/png;base64," + b64(keyPng), title: hl.title, detail: hl.detail, matchId, names, ply: hl.ply }));
+    const out = { meta: { ...hl, matchId, names }, gif, card };
+    // keep finished highlights (they never change); cap the cache
+    if (gif.length + card.length < 1_900_000) {
+      const idx = ((await this.ctx.storage.get<string[]>("clipIndex")) ?? []).filter((x) => x !== k);
+      idx.push(k);
+      const drop = idx.length > 60 ? idx.splice(0, idx.length - 60) : [];
+      await this.ctx.storage.put({ [k]: out, clipIndex: idx });
+      if (drop.length) await this.ctx.storage.delete(drop);
+    }
+    void c;
+    return out;
   }
 
   // ------------------------------------------------------------------ board-link aliases (instance "history")

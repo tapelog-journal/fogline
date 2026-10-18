@@ -6,7 +6,7 @@ import { DurableObject } from "cloudflare:workers";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Hex } from "viem";
 import { foglineAbi, pub } from "./chain";
-import { cfg, type Env } from "./env";
+import { cfg, renderer, type Env } from "./env";
 import { elo, START_RATING } from "./elo";
 export { elo, START_RATING };
 
@@ -73,6 +73,8 @@ export class Ladder extends DurableObject<Env> {
     const recent = ((await this.ctx.storage.get<any[]>("recent")) ?? []).slice(-29);
     recent.push({ id, at: now, players: [a.address, b.address], winner, reason, ratings: [ra, rb] });
     await this.ctx.storage.put("recent", recent);
+    // pre-build the winning-moment highlight clip so share links preview instantly
+    if (winner < 2) this.ctx.waitUntil(renderer(this.env, id).clip(id, "win").catch(() => undefined));
     return { rated: true };
   }
   private async track(id: string, soon = 60_000) { const s = new Set((await this.ctx.storage.get<string[]>("open")) ?? []); if (!s.has(id)) { s.add(id); await this.ctx.storage.put("open", [...s].slice(-200)); } await this.arm(soon); }

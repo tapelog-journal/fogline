@@ -205,6 +205,21 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
     } catch (e) { return err(e); }
   });
 
+  server.registerTool("fogline_highlights", {
+    title: "Get highlight clips for a Fogline match",
+    description: "Use this when the user wants a replay clip, GIF or shareable highlight of a match (captures, Mine blasts, Ghost ambushes, the win). Returns share-page URLs (with X / Open Graph preview cards) and animated GIF URLs. Spectator view: hidden ranks stay hidden.",
+    inputSchema: { matchId: z.union([z.string(), z.number()]).describe("Match number") }, annotations: RO,
+  }, async ({ matchId }) => {
+    try {
+      const id = String(matchId).replace(/^#/, "");
+      if (!/^\d{1,9}$/.test(id)) throw new Error("matchId must be a match number");
+      const r: any = await renderer(env, id).highlights(id);
+      const items = r.items.map((x: any) => ({ ...x, share: `${origin}/clip/${id}/${x.step}`, gif: `${origin}/clip/${id}/${x.step}.gif` }));
+      const lines = items.map((x: any) => `- ${x.title} (ply ${x.ply}): [share page](${x.share}) · [GIF](${x.gif})`);
+      return { ...text(items.length ? `Highlights of match #${id}${r.done ? "" : " (still in progress)"}:\n${lines.join("\n")}\nPosting a share-page URL on X shows a preview card.` : `No highlights in match #${id} yet: clips are made for captures, Mine blasts, Ghost ambushes and wins.`), structuredContent: { matchId: id, done: r.done, highlights: items } };
+    } catch (e) { return err(e); }
+  });
+
   server.registerTool("fogline_tournament", {
     title: "Show the Fogline weekly tournament",
     description: "Use this when the user asks about tournaments, brackets or the weekly cup. Shows this week's single-elimination tournament (sign-up status, start time, bracket, results) and, with a session, the player's own current tournament match. Prizes are decorative cosmetics and valueless test fUSD only.",

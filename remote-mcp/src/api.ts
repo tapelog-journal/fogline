@@ -200,6 +200,11 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
   const next: Record<string, string> = { state: `${base}/state?${q}${fmt}` };
   if (r.phase === "Committing" && !r.yourPieces?.length) next.autoArmy = `${base}/auto-army?${q}${fmt}`;
   if (r.phase === "Settled" || r.phase === "Ended") next.playAgain = `${base}/play-bot?session=${session}${r.botLevel ? `&level=${r.botLevel}` : ""}&ref=${Date.now().toString(36)}${fmt}`;
+  // highlight clips: a share URL after a capture, and the winning moment at the end
+  const evs: string[] = (r.events?.length ? r.events : r.lastTurn) ?? [];
+  const ended = r.phase === "Settled" || r.phase === "Ended";
+  const capture = evs.some((e: string) => /attacker wins|both removed/.test(e));
+  if (ended || capture) next.clip = `${origin}/clip/${r.matchId}/${ended && r.winner !== undefined && Number(r.winner) < 2 ? "win" : "last"}`;
   const body = {
     ok: true, matchId: r.matchId, ...(r.botLevel ? { botLevel: r.botLevel } : {}), phase: r.phase, ply: r.ply, yourTurn: r.yourTurn, yourSide: r.yourSide, status: r.status, stale: !!r.stale,
     board_image_url: img,
@@ -218,6 +223,7 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
     yourPieces: (r.yourPieces ?? []).map((x: any) => `${x.sq} ${x.rank}`).join(", "),
     enemyPieces: (r.enemyPieces ?? []).map((x: any) => `${x.sq} ${x.rank === "hidden" ? (x.moved ? "hidden (has moved)" : "hidden") : x.rank}`).join(", "),
     txs: (r.txs ?? []).map((t: any) => t.url), watch: r.watch, next,
+    ...(next.clip ? { highlight_clip: { share_url: next.clip, gif_url: `${next.clip}.gif`, all: `${origin}/api/match/${r.matchId}/highlights`, hint: "Share page with an animated GIF; posting the share URL on X shows a preview card." } } : {}),
     text: (prefix ? prefix + " " : "") + [...((r.events?.length ? r.events : r.lastTurn) ?? []), r.summary].filter(Boolean).join(". "),
     board_ascii: r.board,
     // structured, fog-of-war-filtered view for UIs (the Play page): own ranks, revealed enemy ranks, hidden = null
@@ -230,7 +236,7 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
     } : undefined,
     moves: legal.map((m: any) => ({ from: m.fromSq, to: m.toSq, piece: m.piece ?? null, attack: !!m.attack })),
   };
-  return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs, boardImage: img, boardPage: page }, { move: moveUrl, refresh: next.state, extra: next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : [] }));
+  return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs, boardImage: img, boardPage: page }, { move: moveUrl, refresh: next.state, extra: [...(next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : []), ...(next.clip ? [["🎬 Highlight clip", next.clip]] : [])] as [string, string][] }));
 }
 
 const CLIENT_LABEL: Record<string, string> = { browser: "browser (human)", mcp: "MCP", skill: "skill.md agent", api: "API", house: "TapeLog bot", unknown: "unknown" };

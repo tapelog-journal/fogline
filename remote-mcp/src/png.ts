@@ -34,3 +34,17 @@ export function b64(bytes: Uint8Array): string {
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
+
+/** SVG -> raw RGBA pixels (for animated clips). */
+export async function svgToRgba(svg: string, width?: number): Promise<{ data: Uint8Array; width: number; height: number }> {
+  if (!ready) ready = initWasm(wasm as WebAssembly.Module).catch((e) => { ready = undefined; throw e; });
+  await ready;
+  const r = new Resvg(svg, {
+    font: { fontBuffers: fonts(), defaultFontFamily: "Inter", sansSerifFamily: "Inter", serifFamily: "Inter", monospaceFamily: "Inter", cursiveFamily: "Inter", fantasyFamily: "Inter" } as any,
+    fitTo: width ? { mode: "width", value: width } : { mode: "original" },
+  });
+  try {
+    const img = r.render();
+    try { return { data: new Uint8Array(img.pixels), width: img.width, height: img.height }; } finally { img.free(); }
+  } finally { r.free(); }
+}

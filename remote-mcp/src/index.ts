@@ -8,6 +8,7 @@ import { buildServer, houseAddress, VERSION } from "./tools";
 import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, tourney, type Env } from "./env";
 import { handleApi, ROBOTS } from "./api";
 import { handleShopPreview } from "./shop";
+import { handleClip, handleHighlights } from "./cliproutes";
 import { chatgptPrompt, handleAliasImage, handleBoardImage, handleBoardPage } from "./boardimg";
 // @ts-ignore text module (wrangler rule)
 import SKILL from "../skill.md";
@@ -52,6 +53,10 @@ export default {
       catch (e: any) { return new Response(JSON.stringify({ ok: false, error: String(e?.message ?? e).slice(0, 200) }), { status: 200, headers: H }); }
     }
     if (url.pathname === "/api/shop/preview.png") return handleShopPreview(req, env);
+    const clip = url.pathname.match(/^\/clip\/(\d{1,9})\/(\d{1,5}|win|last)(\.gif|\/card\.png)?$/);
+    if (clip) return handleClip(req, env, ctx, clip[1], clip[2], clip[3] ?? "");
+    const hl = url.pathname.match(/^\/api\/match\/(\d{1,9})\/highlights$/);
+    if (hl) return handleHighlights(req, env, hl[1]);
     if (url.pathname === "/admin/practice-tournament" && req.method === "POST") {
       // operator-only: needs the ADMIN_TOKEN secret (never in a URL)
       const tok = req.headers.get("x-admin-token") ?? "";
