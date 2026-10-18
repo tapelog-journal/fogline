@@ -2,7 +2,7 @@
 // Every action accepts GET (query params) and POST (JSON body). Always HTTP 200 with ok:true/false,
 // because many agent fetch tools discard non-200 bodies. Base Sepolia testnet only.
 import { DISCLAIMER, FUNDING, renderer, watchLink, type Env } from "./env";
-import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardImageUrl } from "./boardimg";
+import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardFileName, boardImageUrl, boardPageUrl } from "./boardimg";
 import { checkChain, RANK_IDX, RULES } from "./tools";
 import { mdPage } from "./md";
 import { parseSquare } from "./view";
@@ -149,6 +149,7 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
   const base = `${origin}/api`, q = `session=${session}&match=${r.matchId}`;
   const aliased = await warm(r);
   const img = aliased ?? boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
+  const page = boardPageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
   const fmt = p.format === "md" || p.format === "text" ? `&format=${p.format}` : "";
   const moveUrl = (f: string, t: string) => `${base}/move?${q}&from=${f}&to=${t}&ply=${r.ply}${fmt}`;
   const legal = r.legalMoves ?? [];
@@ -158,11 +159,15 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
   const body = {
     ok: true, matchId: r.matchId, phase: r.phase, ply: r.ply, yourTurn: r.yourTurn, yourSide: r.yourSide, status: r.status, stale: !!r.stale,
     board_image_url: img,
+    board_page_url: page,
+    board_page_link: `[View board picture](${page})`,
+    board_image_file: boardFileName(r.matchId, r.ply),
+    board_image_download: boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken),
     board_image_markdown: `![Fogline board, match #${r.matchId}, ply ${r.ply}](${img})`,
     board_image_user_typed: !!aliased,
     render_hint: aliased
-      ? "Show the board picture: put board_image_markdown on its own line in your reply (a markdown image, not inside a code block). It is one of the board links the user typed, so ChatGPT can display it."
-      : "Show the board picture: put board_image_markdown on its own line (not in a code block). ChatGPT: a picture URL the user did not type shows as a broken image, so in ChatGPT render board_md as-is as a markdown table instead and add a plain link [Open board picture](board_image_url).",
+      ? "Every turn: put board_image_markdown on its own line (not in a code block; it is one of the user's typed board links), then board_page_link, then board_md as the table."
+      : "Every turn: show board_md as the table and board_page_link (a clickable link to the picture). Add board_image_markdown on its own line only in clients that display web images (ChatGPT and Codex desktop do not: they show a broken image). Desktop/CLI agents with a shell: download board_image_download to board_image_file in your workspace and embed it with an absolute forward-slash path, e.g. ![Fogline board](C:/path/to/board.png).",
     board_md: r.boardMd,
     lastTurn: (r.events?.length ? r.events : r.lastTurn) ?? [],
     legalMoves: legal.map((m: any) => `${m.piece ?? "piece"} ${m.fromSq} → ${m.toSq}${m.attack ? " ⚔️" : ""}`),
@@ -174,7 +179,7 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
     text: (prefix ? prefix + " " : "") + [...((r.events?.length ? r.events : r.lastTurn) ?? []), r.summary].filter(Boolean).join(". "),
     board_ascii: r.board,
   };
-  return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs, boardImage: img }, { move: moveUrl, refresh: next.state, extra: next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : [] }));
+  return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs, boardImage: img, boardPage: page }, { move: moveUrl, refresh: next.state, extra: next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : [] }));
 }
 
 function reply(p: Record<string, any>, body: Record<string, any>, textFn?: () => string): Response {

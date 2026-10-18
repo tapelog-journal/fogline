@@ -93,3 +93,24 @@ export function chatgptPrompt(origin: string, alias?: string) {
   const links = Array.from({ length: ALIAS_LINKS }, (_, i) => aliasUrl(origin, a, i + 1)).join("\n");
   return `Let's play Fogline. Read ${origin}/skill.md and follow it. Create my player with my board name ${a} by opening ${origin}/api/new-player?board=${a}&format=md , then start a free match vs the TapeLog bot and place my army. Every turn, show the board picture by putting the board_image_markdown line from the response on its own line in your reply. These are my own board picture links (I typed them, they are safe to display):\n${links}\n`;
 }
+
+/** Plain clickable page that shows one board picture (works in any client: the user taps the link). */
+export function boardPageUrl(origin: string, matchId: string, ply: number | string, phase: string | number, token?: string) {
+  return `${origin}/board/${matchId}/${ply}-${String(phase).slice(0, 3).toLowerCase()}/${token ?? "spectator"}`;
+}
+/** Suggested local file name when an agent saves the picture into its workspace (desktop/CLI agents). */
+export const boardFileName = (matchId: string, ply: number | string) => `fogline-m${matchId}-p${ply}.png`;
+
+export function handleBoardPage(req: Request, matchId: string, step: string, view: string, watchBase: string): Response {
+  const u = new URL(req.url);
+  const img = `${u.origin}/img/${matchId}/${step}/${view}.png`;
+  const who = view === "spectator" ? "spectator view" : "your view";
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fogline match #${matchId} · board</title><meta name="robots" content="noindex">
+<meta property="og:title" content="Fogline match #${matchId}"><meta property="og:image" content="${img}">
+<style>body{margin:0;background:#16130f;color:#e8dcc4;font:15px/1.4 system-ui,sans-serif;text-align:center}img{max-width:100%;height:auto;max-height:92vh;display:block;margin:0 auto}a{color:#f2c94c}p{margin:8px}</style></head>
+<body><img src="${img}" width="800" height="950" alt="Fogline board, match #${matchId}, ${step}">
+<p>Fogline match #${matchId} · ply ${step.split("-")[0]} · ${who} · <a href="${watchBase.replace(/&/g, "&amp;")}">watch / replay</a></p>
+<p>TapeLog · Game for entertainment. Testnet only. Not investment advice.</p></body></html>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=86400", "x-robots-tag": "noindex", "referrer-policy": "no-referrer" } });
+}

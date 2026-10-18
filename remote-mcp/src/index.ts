@@ -1,3 +1,4 @@
+import { watchLink } from "./env";
 // Fogline remote MCP server on Cloudflare Workers.
 //   POST/GET/DELETE /mcp   Streamable HTTP (stateless, JSON responses)
 //   GET /sse + POST /messages?sessionId=...   legacy SSE transport
@@ -6,7 +7,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { buildServer, houseAddress, VERSION } from "./tools";
 import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, type Env } from "./env";
 import { handleApi, ROBOTS } from "./api";
-import { chatgptPrompt, handleAliasImage, handleBoardImage } from "./boardimg";
+import { chatgptPrompt, handleAliasImage, handleBoardImage, handleBoardPage } from "./boardimg";
 // @ts-ignore text module (wrangler rule)
 import SKILL from "../skill.md";
 // @ts-ignore text module (wrangler rule)
@@ -37,6 +38,8 @@ export default {
     if (pic) return handleBoardImage(req, env, pic[1]);
     const img = url.pathname.match(/^\/img\/(\d{1,9})\/[0-9a-z-]{1,16}\/([0-9a-f]{64}\.[0-9a-f]{24}|spectator)\.png$/);
     if (img) return handleBoardImage(req, env, img[1], img[2] === "spectator" ? "" : img[2]);
+    const bp = url.pathname.match(/^\/board\/(\d{1,9})\/([0-9]{1,5}-[a-z]{1,3})\/([0-9a-f]{64}\.[0-9a-f]{24}|spectator)$/);
+    if (bp) return handleBoardPage(req, bp[1], bp[2], bp[3], watchLink(env, bp[1]));
     const al = url.pathname.match(/^\/v\/([a-z0-9]{8,24})\/(\d{1,3})\.png$/);
     if (al) return handleAliasImage(req, env, al[1], Number(al[2]));
     const hist = url.pathname.match(/^\/api\/match\/(\d{1,9})\/history$/);

@@ -8,7 +8,7 @@ import { readState } from "./chain";
 import { ALLOWED_CHAIN_ID, cfg, DISCLAIMER, FUNDING, watchLink, type Env } from "./env";
 import { boardView, boardMd, LEGEND, MD_LEGEND, parseSquare, summary } from "./view";
 import { mdPage } from "./md";
-import { boardImageUrl } from "./boardimg";
+import { boardImageUrl, boardPageUrl } from "./boardimg";
 import { renderer } from "./env";
 import { b64 } from "./png";
 import { ITEMS } from "./cosmetics";
@@ -48,7 +48,8 @@ function err(e: any) {
 }
 export function fmtPlay(r: any, origin = PUBLIC_ORIGIN) {
   const img = boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
-  return "Show the user the board picture: copy the markdown image line below (![Fogline board](...)) into your reply on its own line, not in a code block. Only if images cannot be shown, use the text board instead, exactly as given.\n\n" + `board_image_url: ${img}\n\n` + mdPage({ ...r, boardImage: img });
+  const page = boardPageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
+  return "Every turn show the user the text board (exactly as given) and the clickable [View board picture](board_page_url) link. Also copy the markdown image line (![Fogline board](...)) on its own line if your client displays web images.\n\n" + `board_image_url: ${img}\nboard_page_url: ${page}\n\n` + mdPage({ ...r, boardImage: img, boardPage: page });
 }
 /** Tool result for a board: markdown text (with image link) + the PNG itself as an MCP image block. */
 async function boardResult(env: Env, r: any, prefix: string, origin: string) {

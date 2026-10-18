@@ -11,12 +11,17 @@ API base: `https://fogline-mcp.tapelog.workers.dev/api`
 
 - Every action works as **GET with query params** or **POST with a JSON body**.
 - **Recommended: add `&format=md`** to every URL. You get a ready-to-show markdown page: status, the board picture, last turn, your moves as clickable links, next-step links, and a text board as a fallback.
-- Without it, the response is always HTTP 200 with JSON: `ok`, `text`, `board_image_url`, `board_image_markdown`, `board_md`, `lastTurn`, `legalMoves`, `moveUrls`, `next`, `watch`, and `error` when `ok` is false.
-- **Showing the board (every turn):** show the board **picture**. Put the markdown image line on its own line in your reply, not inside a code block: `![Fogline board](BOARD_IMAGE_URL)`. Use `board_image_markdown` from the JSON, or copy the `![Fogline board…](…)` line at the top of the `format=md` page. The picture shows the player's own ranks, hidden enemy pieces, the last move, and the cosmetics each player owns.
-- **Fallback only:** if you cannot display images, render `board_md` as-is as a markdown table (not inside a code block). Do not reformat it.
-- **ChatGPT:** ChatGPT only displays an image whose exact URL the user typed in the chat; any other picture URL shows as a broken image. So:
-  - If the user's message lists board links like `https://fogline-mcp.tapelog.workers.dev/v/NAME/1.png` … `/40.png`, create the player with `new-player?board=NAME` (or call `link-board&board=NAME` with an existing session). Every response then sets `board_image_url` to one of those exact links (`board_image_user_typed: true`). Show `board_image_markdown` each turn as usual.
-  - If there are no board links, do **not** write a markdown image (it would show broken). Render `board_md` as the table, add a plain link `[Open board picture](BOARD_IMAGE_URL)`, and tell the user they can get picture links by opening `https://fogline-mcp.tapelog.workers.dev/chatgpt` and pasting that prompt into a new chat.
+- Without it, the response is always HTTP 200 with JSON: `ok`, `text`, `board_md`, `board_page_url`, `board_page_link`, `board_image_url`, `board_image_markdown`, `board_image_download`, `board_image_file`, `lastTurn`, `legalMoves`, `moveUrls`, `next`, `watch`, and `error` when `ok` is false.
+- **Showing the board (every turn), always both of these:**
+  1. `board_md` as-is as a markdown table (not inside a code block, not reformatted), and
+  2. the clickable link `board_page_link`, i.e. `[View board picture](BOARD_PAGE_URL)`. It opens a small page with the rendered picture (your ranks, hidden enemy pieces, the last move, cosmetics) and works in every client.
+- **Inline picture, only where it can display.** Many chat apps block web images that come from tool results and show a broken-image icon instead. A broken image is worse than none, so pick the case that matches you:
+  - **Desktop or CLI agent with a shell** (Codex desktop or CLI, ChatGPT desktop running local commands, Claude Code, and so on): download the picture into your workspace and embed the **local file**. Use a forward-slash absolute path with no spaces and no angle brackets.
+    - PowerShell: `Invoke-WebRequest "BOARD_IMAGE_DOWNLOAD" -OutFile "fogline\BOARD_IMAGE_FILE"`, then `![Fogline board](C:/full/path/fogline/BOARD_IMAGE_FILE)`.
+    - bash: `curl -s -o fogline/BOARD_IMAGE_FILE "BOARD_IMAGE_DOWNLOAD"`, then `![Fogline board](/full/path/fogline/BOARD_IMAGE_FILE)`.
+    - `board_image_file` is a new name every turn, so the picture never goes stale.
+  - **ChatGPT (web or app chat):** it only displays an image whose exact URL the user typed in the chat. If the user's message lists board links like `https://fogline-mcp.tapelog.workers.dev/v/NAME/1.png` … `/40.png`, create the player with `new-player?board=NAME` (or `link-board&board=NAME` for an existing session). Then `board_image_url` is one of those links (`board_image_user_typed: true`) and you can show `board_image_markdown`. If there are no board links, don't write a markdown image; the table plus the link is enough. To get board links, the user can open `https://fogline-mcp.tapelog.workers.dev/chatgpt` and paste that prompt into a new chat.
+  - **Clients that show web images** (for example Claude.ai, or MCP clients that show image blocks): put `board_image_markdown` on its own line.
 - Responses include ready-made `next` and `moveUrls` links, so you can just open the next link.
 - If your fetch tool can only open URLs that already appeared in the conversation or in earlier results, don't build URLs yourself. Open the exact links from `next` and `moveUrls`. With `&format=md` every move is a link.
 
@@ -131,7 +136,7 @@ The board picture (`board_image_url`, a PNG) is drawn from the player's point of
 
 - Ask the human before each move if they want to choose ("I suggest e2 → e3. OK?"). Otherwise play on their behalf and summarize each turn.
 - Use one session per human. Don't create extra players to get more test ETH: funding is rate-limited.
-- Show the board picture after every turn (the markdown image, not pasted as code). Use the text table only if images can't be shown. In ChatGPT, show the image only when `board_image_user_typed` is true; otherwise show the table plus a plain link.
+- After every turn, show the text board and the `[View board picture](…)` link. Add the inline picture only where it can display (a local file for shell agents, or typed board links in ChatGPT).
 - Every `move` URL carries `ply`. If you open the same link twice, the second call won't move, and it returns `stale: true` with the current board.
 - If you get `ok: false`, read `error`. It explains what to do (for example, it isn't your turn yet).
 - Resign only when the human asks.
