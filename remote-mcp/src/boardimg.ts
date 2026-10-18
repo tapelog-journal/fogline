@@ -98,8 +98,6 @@ export function chatgptPrompt(origin: string, alias?: string) {
 export function boardPageUrl(origin: string, matchId: string, ply: number | string, phase: string | number, token?: string) {
   return `${origin}/board/${matchId}/${ply}-${String(phase).slice(0, 3).toLowerCase()}/${token ?? "spectator"}`;
 }
-/** Suggested local file name when an agent saves the picture into its workspace (desktop/CLI agents). */
-export const boardFileName = (matchId: string, ply: number | string) => `fogline-m${matchId}-p${ply}.png`;
 
 export function handleBoardPage(req: Request, matchId: string, step: string, view: string, watchBase: string): Response {
   const u = new URL(req.url);

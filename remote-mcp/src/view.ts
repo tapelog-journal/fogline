@@ -86,33 +86,32 @@ export function parseSquare(v: unknown): number {
   return NaN;
 }
 export const ABBR = ["Bc", "Gh", "Sc", "Sa", "Gu", "Kn", "Ca", "Wa", "Mi"];
-export const MD_LEGEND = "🔵 = yours · 🔴 = enemy (revealed) · ❓ = hidden enemy · 🌫️ = fog (impassable) · 📍 = last move landed here, · = it came from here. Bc Beacon · Gh Ghost · Sc Scout · Sa Sapper · Gu Guard · Kn Knight · Ca Captain · Wa Warden · Mi Mine";
+/** One-character rank codes for the compact text board (index = rank: Beacon 0 … Mine 8). */
+export const CODE = ["B", "1", "2", "3", "4", "5", "6", "7", "M"];
+export const MD_LEGEND = "Yours: 1 Ghost · 2 Scout · 3 Sapper · 4 Guard · 5 Knight · 6 Captain · 7 Warden · B Beacon · M Mine. e5 = enemy revealed (rank 5) · ? = hidden enemy · ~ = fog · · = empty · * = last move landed · o = it came from";
 
 export interface LastMove { from: number; to: number }
 
-/** GitHub-flavored markdown table. Own side at the bottom (side B sees the board rotated). */
+/** Compact GitHub-flavored markdown table (1–3 ASCII chars per cell, fits a narrow chat pane).
+ *  Own side at the bottom (side B sees the board rotated). */
 export function boardMd(s: GameState, side: number, layout?: Layout, last?: LastMove): string {
   const flip = side === 1;
   const rows = flip ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
   const cols = flip ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
-  const out = ["|   | " + cols.map((c) => FILES[c]).join(" | ") + " |", "|:-:|" + cols.map(() => ":-:").join("|") + "|"];
+  const out = ["| |" + cols.map((c) => FILES[c]).join("|") + "|", "|-|" + cols.map(() => ":-:").join("|") + "|"];
   for (const r of rows) {
     const cells = cols.map((c) => {
       const sq = r * 8 + c;
+      if (BLOCKED.has(sq)) return "~";
+      const cell = s.board[sq];
+      if (!cell) return last && last.from === sq ? "o" : "·";
+      const pid = cell - 1, owner = Math.floor(pid / PIECES), p = s.pieces[pid];
       let t: string;
-      if (BLOCKED.has(sq)) t = "🌫️";
-      else {
-        const cell = s.board[sq];
-        if (!cell) t = last && last.from === sq ? "·" : " ";
-        else {
-          const pid = cell - 1, owner = Math.floor(pid / PIECES), p = s.pieces[pid];
-          if (owner === side) t = "🔵" + (layout ? ABBR[layout.ranks[pid % PIECES]] : p.revealed ? ABBR[p.rank] : "?");
-          else t = p.revealed ? "🔴" + ABBR[p.rank] : "❓";
-        }
-      }
-      return last && last.to === sq && t.trim() ? `📍${t}` : t;
+      if (owner === side) t = layout ? CODE[layout.ranks[pid % PIECES]] : p.revealed ? CODE[p.rank] : "#";
+      else t = p.revealed ? "e" + CODE[p.rank] : "?";
+      return last && last.to === sq ? t + "*" : t;
     });
-    out.push(`| **${r + 1}** | ` + cells.join(" | ") + " |");
+    out.push(`|${r + 1}|` + cells.join("|") + "|");
   }
   return out.join("\n");
 }

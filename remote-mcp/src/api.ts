@@ -2,7 +2,7 @@
 // Every action accepts GET (query params) and POST (JSON body). Always HTTP 200 with ok:true/false,
 // because many agent fetch tools discard non-200 bodies. Base Sepolia testnet only.
 import { DISCLAIMER, FUNDING, renderer, watchLink, type Env } from "./env";
-import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardFileName, boardImageUrl, boardPageUrl } from "./boardimg";
+import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardImageUrl, boardPageUrl } from "./boardimg";
 import { checkChain, RANK_IDX, RULES } from "./tools";
 import { mdPage } from "./md";
 import { parseSquare } from "./view";
@@ -161,13 +161,11 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
     board_image_url: img,
     board_page_url: page,
     board_page_link: `[View board picture](${page})`,
-    board_image_file: boardFileName(r.matchId, r.ply),
-    board_image_download: boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken),
     board_image_markdown: `![Fogline board, match #${r.matchId}, ply ${r.ply}](${img})`,
     board_image_user_typed: !!aliased,
     render_hint: aliased
-      ? "Every turn: put board_image_markdown on its own line (not in a code block; it is one of the user's typed board links), then board_page_link, then board_md as the table."
-      : "Every turn: show board_md as the table and board_page_link (a clickable link to the picture). Add board_image_markdown on its own line only in clients that display web images (ChatGPT and Codex desktop do not: they show a broken image). Desktop/CLI agents with a shell: download board_image_download to board_image_file in your workspace and embed it with an absolute forward-slash path, e.g. ![Fogline board](C:/path/to/board.png).",
+      ? "Every turn: put board_image_markdown on its own line (not in a code block; it is one of the user's typed board links), then board_md as the table, then board_page_link as a prominent link."
+      : "Every turn: show board_md as the table and board_page_link as a prominent clickable link (it opens the board picture). Add board_image_markdown on its own line only if your client displays web images from tool results (ChatGPT does not: it shows a broken image).",
     board_md: r.boardMd,
     lastTurn: (r.events?.length ? r.events : r.lastTurn) ?? [],
     legalMoves: legal.map((m: any) => `${m.piece ?? "piece"} ${m.fromSq} → ${m.toSq}${m.attack ? " ⚔️" : ""}`),

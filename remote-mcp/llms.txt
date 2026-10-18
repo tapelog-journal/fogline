@@ -5,7 +5,7 @@
 ## Play
 
 - [skill.md](https://fogline-mcp.tapelog.workers.dev/skill.md): complete agent instructions (rules, API, example URLs, board picture, tips)
-- Showing the board: every turn show `board_md` (a markdown table) plus the clickable `board_page_link` ([View board picture](board_page_url): a page with the rendered PNG). Inline images: shell agents download `board_image_download` to `board_image_file` and embed the local file; in ChatGPT, use only the user's typed board links from https://fogline-mcp.tapelog.workers.dev/chatgpt (`new-player?board=NAME`); clients that display web images can show `board_image_markdown`.
+- Showing the board: every turn show `board_md` (a compact markdown table: your ranks as digits/B/M, `?` hidden enemy, `e6` revealed enemy, `~` fog, `*` last move) plus a prominent `board_page_link` ([View board picture](board_page_url): a page with the rendered PNG). Show `board_image_markdown` inline only where the client displays it (Claude, MCP image blocks, or the user's typed board links in ChatGPT from https://fogline-mcp.tapelog.workers.dev/chatgpt via `new-player?board=NAME`).
 - [Spectator board picture](https://fogline-mcp.tapelog.workers.dev/api/match/1/board.png): `/api/match/MATCH/board.png` or `/img/MATCH/PLY-PHASE/spectator.png` (hidden pieces stay hidden)
 - [skill.md mirror on GitHub Pages](https://tapelog-journal.github.io/fogline/skill.md)
 - [HTTP API base](https://fogline-mcp.tapelog.workers.dev/api)

@@ -10,10 +10,10 @@ export function mdPage(r: any, links: MdLinks = {}): string {
   out.push(`### Fogline match #${r.matchId} · ply ${r.ply} · ${turn}`);
   if (r.boardImage) out.push(`![Fogline board, match #${r.matchId}, ply ${r.ply}](${r.boardImage})`);
   if (r.boardPage) out.push(`[View board picture](${r.boardPage})`);
-  out.push(`You are 🔵 (${r.yourSide === "B" ? "side B, board shown from your side" : "side A, bottom ranks 1-2, moving up"}). ${r.yourTurn ? "" : r.status ?? ""}`.trim());
+  out.push(`You are side ${r.yourSide === "B" ? "B (board shown from your side)" : "A (bottom ranks 1-2, moving up)"}; your pieces are the digits/B/M. ${r.yourTurn ? "" : r.status ?? ""}`.trim());
   const happened = (r.events?.length ? r.events : r.lastTurn) ?? [];
   if (happened.length) out.push(`**Last turn:** ${happened.join(" · ")}`);
-  if (r.boardMd) out.push((r.boardImage ? "**Text board** (always show it, with the View board picture link; show the image above only if your client displays web images):\n\n" : "") + r.boardMd + "\n\n" + MD_LEGEND);
+  if (r.boardMd) out.push((r.boardImage ? "**Text board** (always show it, plus the View board picture link; show the image above only if your client displays web images):\n\n" : "") + r.boardMd + "\n\n" + MD_LEGEND);
   if (r.movesByPiece?.length) {
     const list = r.movesByPiece.map((g: any) => {
       const tos = g.to.map((t: string) => { const sq = t.replace("⚔️", ""); return links.move ? `[${t}](${links.move(g.from, sq)})` : t; });
