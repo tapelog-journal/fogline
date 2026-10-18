@@ -115,13 +115,13 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
 
   server.registerTool("fogline_play_bot", {
     title: "Play the TapeLog bot",
-    description: "Use this when the user wants to play against the computer. Creates a match against the TapeLog house bot, which joins and plays automatically. You are side A and move first after both armies are placed. Next call fogline_auto_army (or fogline_set_army).",
-    inputSchema: { session: sessionArg, stake: stakeArg, turnTimeoutSeconds: timeoutArg, chainId: chainArg }, annotations: WR, _meta: appCallableMeta,
-  }, async ({ session, stake, turnTimeoutSeconds, chainId }) => {
+    description: "Use this when the user wants to play against the computer. Creates a match against the TapeLog house bot, which joins and plays automatically. You are side A and move first after both armies are placed. Difficulty `level`: easy (mostly random), normal (default), or hard (infers your hidden ranks from what the chain shows). Next call fogline_auto_army (or fogline_set_army).",
+    inputSchema: { session: sessionArg, stake: stakeArg, level: z.enum(["easy", "normal", "hard"]).optional().describe("Bot difficulty: easy, normal (default) or hard."), turnTimeoutSeconds: timeoutArg, chainId: chainArg }, annotations: WR, _meta: appCallableMeta,
+  }, async ({ session, stake, level, turnTimeoutSeconds, chainId }) => {
     try {
       checkChain(chainId);
-      const r = await player(session).playBot(String(BigInt(Math.round((stake ?? 0) * 1e6))), turnTimeoutSeconds);
-      return { ...text(`Match #${r.matchId} created vs the TapeLog house bot${stake ? ` (stake ${stake} test fUSD)` : ""}. ${r.joined ? "The bot has joined." : "The bot is joining now."}\nNext: fogline_auto_army with matchId ${r.matchId}.\n\nOnchain transactions:\n${r.txs.map((t: any) => `- ${t.fn}: ${t.url}`).join("\n")}\n\nWatch live: ${r.watch}`), structuredContent: { matchId: String(r.matchId), joined: !!r.joined, watch: r.watch } };
+      const r = await player(session).playBot(String(BigInt(Math.round((stake ?? 0) * 1e6))), turnTimeoutSeconds, undefined, level ?? "normal");
+      return { ...text(`Match #${r.matchId} created vs the TapeLog house bot (${r.level ?? level ?? "normal"} level)${stake ? ` (stake ${stake} test fUSD)` : ""}. ${r.joined ? "The bot has joined." : "The bot is joining now."}\nNext: fogline_auto_army with matchId ${r.matchId}.\n\nOnchain transactions:\n${r.txs.map((t: any) => `- ${t.fn}: ${t.url}`).join("\n")}\n\nWatch live: ${r.watch}`), structuredContent: { matchId: String(r.matchId), level: r.level ?? level ?? "normal", joined: !!r.joined, watch: r.watch } };
     } catch (e) { return err(e); }
   });
 

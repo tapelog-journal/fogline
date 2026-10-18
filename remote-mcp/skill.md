@@ -66,7 +66,7 @@ Replace `SESSION` and `MATCH` with the values you get back. Keep the session for
 
 Optional parameters:
 
-- `play-bot`: `stake` (0-100, in valueless test fUSD) and `timeout` (60-3600 seconds per turn).
+- `play-bot`: `level` = `easy`, `normal` (default) or `hard`; `stake` (0-100, in valueless test fUSD) and `timeout` (60-3600 seconds per turn). Easy plays mostly random moves. Hard estimates the probability of every rank for each of your hidden pieces from what the chain shows (army composition, revealed ranks, which pieces have moved) and plays the best expected outcome. Ask the human which level they want if they haven't said; responses include `botLevel`, and the bot is rated separately per level on the ladder.
 - `set-army` takes 16 comma-separated ranks in starting-square order instead of auto-army, for example:
   `.../api/set-army?session=SESSION&match=MATCH&ranks=Mine,Beacon,Mine,Guard,Knight,Sapper,Guard,Captain,Scout,Ghost,Scout,Warden,Scout,Knight,Sapper,Guard`
   Side A's order is a1..h1 then a2..h2. Side B's order is a7..h7 then a8..h8.

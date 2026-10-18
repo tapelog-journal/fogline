@@ -45,6 +45,16 @@ Funding policy (see `src/env.ts`):
 
 The `Ladder` Durable Object (`src/ladder.ts`, Elo math in `src/elo.ts`) keeps a public Elo ladder. Everyone starts at 1200, K is 40 for a player's first 10 games and 24 after that. Results never come from clients: `check(id)` reads `getMatch` onchain and rates a match once, only when it is Settled with a real ending (Beacon captured, resign, timeout, max-ply draw, illegal reveal, winner unverified). An alarm scans every match id in order and re-checks unsettled ones, and Player/House also call `check` right after a settle so ratings update immediately. Players can set an optional handle (`new-player?name=` or `set-name`). The client kind is self-reported: `client=browser|mcp|skill`, otherwise `api`; the house bot is `house`. `GET /api/ladder` (JSON or `format=md`), MCP tool `fogline_ladder`, page `docs/ladder.html`.
 
+## House bot levels
+
+`agent/src/levels.ts` adds difficulty levels on top of the baseline bot (`agent/src/bot.ts`). Pick one with `play-bot?level=`, the MCP `fogline_play_bot` `level` argument, or the Play page selector; the House DO stores it per match.
+
+- **easy:** mostly random legal moves and a fully random army (it still takes a revealed Beacon next to it).
+- **normal:** the baseline heuristic bot (default).
+- **hard:** probabilistic inference over hidden ranks. For every live hidden enemy piece it builds a rank distribution that matches the remaining army composition (composition minus ranks the chain revealed) and the onchain `moved` flag (a piece that moved is never a Beacon or Mine), with a prior that unmoved back-row pieces are more likely the Beacon or Mines, solved with iterative proportional fitting. Moves are scored by the expected material swing of attacks, the expected loss from being attacked next turn, and pressure toward the squares most likely to hide the Beacon. It also defends its own Beacon and uses a structured army (Beacon off the edge of the back row, a Mine in front and one beside it). It only uses public information.
+
+Offline self-play (`node test/levels-sim.mjs 200`): hard beats normal about 79%, hard beats easy about 99%, normal beats easy about 90%. The ladder rates the bot separately per level (`TapeLog bot (Easy|Normal|Hard)`).
+
 ## Deploy
 
 ```bash

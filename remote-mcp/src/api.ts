@@ -8,6 +8,7 @@ import { mdPage } from "./md";
 import { coord, parseSquare } from "./view";
 import { RANK_NAMES } from "../../agent/src/rules";
 import { Phase } from "../../agent/src/rules";
+import { LEVEL_LABEL, parseLevel } from "../../agent/src/levels";
 
 const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board", "ladder", "set-name"] as const;
 type Action = (typeof ACTIONS)[number];
@@ -112,10 +113,11 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
       }
       case "wallet": { const r = await pl.info(); return reply(p, { ok: true, ...r, text: `wallet ${r.address}: ${r.eth} test ETH, ${r.fUSD} fUSD; matches: ${r.matches.join(", ") || "none"}` }); }
       case "play-bot": {
-        const r = await pl.playBot(stakeUnits(), timeout(), p.ref ? String(p.ref).slice(0, 64) : undefined);
+        const level = parseLevel(p.level ?? p.difficulty);
+        const r = await pl.playBot(stakeUnits(), timeout(), p.ref ? String(p.ref).slice(0, 64) : undefined, level);
         const next = { autoArmy: `${origin}/api/auto-army?session=${session}&match=${r.matchId}` };
-        return reply(p, { ok: true, matchId: r.matchId, reused: !!r.reused, txs: r.txs.map((t: any) => t.url), watch: r.watch,
-          text: `${r.reused ? "Reusing your match" : "Match"} #${r.matchId} vs the TapeLog house bot (${r.joined ? "bot joined" : "bot joining"}). Next place your army: ${next.autoArmy}  Watch: ${r.watch}`, next });
+        return reply(p, { ok: true, matchId: r.matchId, level: r.level, reused: !!r.reused, txs: r.txs.map((t: any) => t.url), watch: r.watch,
+          text: `${r.reused ? "Reusing your match" : "Match"} #${r.matchId} vs the TapeLog house bot, ${LEVEL_LABEL[r.level as keyof typeof LEVEL_LABEL] ?? r.level} level (${r.joined ? "bot joined" : "bot joining"}). Next place your army: ${next.autoArmy}  Watch: ${r.watch}`, next });
       }
       case "create": {
         const opp = p.opponent ? String(p.opponent) : undefined;
@@ -166,9 +168,9 @@ async function play(warm: (r: any) => void | Promise<string | undefined>, p: Rec
   const legal = r.legalMoves ?? [];
   const next: Record<string, string> = { state: `${base}/state?${q}${fmt}` };
   if (r.phase === "Committing" && !r.yourPieces?.length) next.autoArmy = `${base}/auto-army?${q}${fmt}`;
-  if (r.phase === "Settled" || r.phase === "Ended") next.playAgain = `${base}/play-bot?session=${session}&ref=${Date.now().toString(36)}${fmt}`;
+  if (r.phase === "Settled" || r.phase === "Ended") next.playAgain = `${base}/play-bot?session=${session}${r.botLevel ? `&level=${r.botLevel}` : ""}&ref=${Date.now().toString(36)}${fmt}`;
   const body = {
-    ok: true, matchId: r.matchId, phase: r.phase, ply: r.ply, yourTurn: r.yourTurn, yourSide: r.yourSide, status: r.status, stale: !!r.stale,
+    ok: true, matchId: r.matchId, ...(r.botLevel ? { botLevel: r.botLevel } : {}), phase: r.phase, ply: r.ply, yourTurn: r.yourTurn, yourSide: r.yourSide, status: r.status, stale: !!r.stale,
     board_image_url: img,
     board_page_url: page,
     board_page_link: `[View board picture](${page})`,
@@ -204,7 +206,7 @@ const CLIENT_LABEL: Record<string, string> = { browser: "browser (human)", mcp: 
 async function ladderReply(p: Record<string, any>, env: Env, origin: string) {
   const limit = Math.max(1, Math.min(100, Number(p.limit ?? 50) || 50));
   const t = await ladder(env).top(limit);
-  const short = (a: string) => a.slice(0, 6) + "…" + a.slice(-4);
+  const short = (a: string) => (a.startsWith("0x") ? a.slice(0, 6) + "…" + a.slice(-4) : "TapeLog bot");
   const rows = t.players.map((e: any, i: number) => ({ rank: i + 1, name: e.name ?? null, player: short(e.address), address: e.address, client: e.client, clientLabel: CLIENT_LABEL[e.client] ?? e.client, rating: e.rating, peak: e.peak ?? e.rating, games: e.games, wins: e.w, losses: e.l, draws: e.d, lastPlayed: e.last ? new Date(e.last).toISOString() : null }));
   return reply(p, { ok: true, ladder: rows, totalRated: t.total, matchesScanned: t.scanned, recent: t.recent, page: "https://tapelog-journal.github.io/fogline/ladder.html",
     text: `Fogline ladder (Elo, start ${1200}): ${rows.slice(0, 10).map((r: any) => `${r.rank}. ${r.name ?? r.player} ${r.rating} (${r.wins}-${r.losses}-${r.draws}, ${r.clientLabel})`).join("; ") || "no rated matches yet"}. Ratings change only for matches that settled onchain. Set your name: ${origin}/api/set-name?session=SESSION&name=HANDLE` },

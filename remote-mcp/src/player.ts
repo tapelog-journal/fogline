@@ -13,6 +13,7 @@ import { DEFAULT_LOOK_PAIR, ladder, renderer } from "./env";
 import { sceneFrom } from "./render";
 import { viewToken } from "./boardimg";
 import { cosmeticsCall, findItem, ITEMS, ownedBy } from "./cosmetics";
+import type { Level } from "../../agent/src/levels";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class UserError extends Error {}
@@ -111,10 +112,10 @@ export class Player extends DurableObject<Env> {
     return undefined;
   }
 
-  async playBot(stakeUnits: string, turnTimeout?: number, ref?: string) {
+  async playBot(stakeUnits: string, turnTimeout?: number, ref?: string, level: Level = "normal") {
     return this.lock.run(async () => {
       const prior = await this.recent("bot", ref);
-      if (prior) return { matchId: prior, joined: true, txs: [], watch: watchLink(this.env, prior), reused: true };
+      if (prior) return { matchId: prior, joined: true, txs: [], watch: watchLink(this.env, prior), reused: true, level: (await this.ctx.storage.get<Level>(`level:${prior}`)) ?? "normal" };
       const stake = BigInt(stakeUnits);
       const house = this.env.HOUSE.get(this.env.HOUSE.idFromName("house"));
       if ((await house.activeCount()) >= 12) throw new UserError("The TapeLog house bot is busy with too many matches; try again in a few minutes.");
@@ -123,13 +124,13 @@ export class Player extends DurableObject<Env> {
       txs.push(created);
       const id = matchIdFrom(created.receipt);
       await this.remember(id);
-      await this.ctx.storage.put("recent:bot", { at: Date.now(), matchId: id.toString(), ref });
-      const w = await house.watch(id.toString(), await this.session());
+      await this.ctx.storage.put({ "recent:bot": { at: Date.now(), matchId: id.toString(), ref }, [`level:${id}`]: level });
+      const w = await house.watch(id.toString(), await this.session(), level);
       if (!w.ok) throw new UserError(w.reason!);
       // wait (briefly) for the house bot to join so the player can place their army right away
       let s = await readState(cfg(this.env).rpcUrl, cfg(this.env).game, id, created.receipt.blockNumber);
       for (let i = 0; i < 14 && s.match.phase === Phase.Open; i++) { await sleep(2000); s = await readState(cfg(this.env).rpcUrl, cfg(this.env).game, id); }
-      return { matchId: id.toString(), joined: s.match.phase !== Phase.Open, txs: txs.map(out), watch: watchLink(this.env, id) };
+      return { matchId: id.toString(), joined: s.match.phase !== Phase.Open, txs: txs.map(out), watch: watchLink(this.env, id), level };
     });
   }
 
@@ -286,6 +287,7 @@ export class Player extends DurableObject<Env> {
       legalMoves: legal,
       movesByPiece: groupMoves(legal).map((g) => ({ piece: g.piece, from: coord(g.from), to: g.tos.map((t) => coord(t.to) + (t.attack ? "⚔️" : "")) })),
       watch: watchLink(this.env, s.id),
+      botLevel: s.match.players.some((p) => p.toLowerCase() === this.houseAddress().toLowerCase()) ? ((await this.ctx.storage.get<Level>(`level:${s.id}`)) ?? "normal") : undefined,
       last: lastTurn?.last, deadline: Number(s.match.deadline), turn: Number(s.match.turn), winner: Number(s.match.winner), reason: Number(s.match.reason),
     };
   }

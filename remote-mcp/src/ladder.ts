@@ -14,6 +14,7 @@ export { elo, START_RATING };
 // not counted: None 0, DrawNoCommit 5, Cancelled 6 (no game was played)
 const COUNTED = new Set([1, 2, 3, 4, 7, 8]);
 const SETTLED = 6, NONE = 0;
+const SCHEMA = 3; // 3: house bot rated per difficulty
 export const CLIENTS = ["browser", "mcp", "skill", "api", "house", "unknown"] as const;
 
 export interface Entry { address: string; name?: string; client: string; rating: number; games: number; w: number; l: number; d: number; last?: number; peak?: number }
@@ -24,13 +25,21 @@ export class Ladder extends DurableObject<Env> {
     const a = addr.toLowerCase();
     const e = await this.ctx.storage.get<Entry>(`p:${a}`);
     if (e) return e;
-    const house = a === this.houseAddr();
-    return { address: a, client: house ? "house" : "unknown", name: house ? "TapeLog bot" : undefined, rating: START_RATING, games: 0, w: 0, l: 0, d: 0 };
+    const lv = /^house:(easy|normal|hard)$/.exec(a)?.[1];
+    if (lv) return { address: a, client: "house", name: `TapeLog bot (${lv[0].toUpperCase() + lv.slice(1)})`, rating: START_RATING, games: 0, w: 0, l: 0, d: 0 };
+    return { address: a, client: "unknown", rating: START_RATING, games: 0, w: 0, l: 0, d: 0 };
   }
+  /** The house bot is rated separately per difficulty: its seat in a match maps to house:<level>. */
+  private async seat(addr: string, id: string) {
+    if (addr.toLowerCase() !== this.houseAddr()) return addr;
+    return `house:${(await this.ctx.storage.get<string>(`hl:${id}`)) ?? "normal"}`;
+  }
+  async noteHouseLevel(id: string, level: string) { await this.migrate(); await this.ctx.storage.put(`hl:${id}`, level); }
 
   /** A player set a handle and/or reported its client kind. */
   async register(address: string, name?: string, client?: string) {
     await this.migrate();
+    if (address.toLowerCase() === this.houseAddr()) return undefined;
     const e = await this.entry(address);
     if (e.client === "house") return e;
     if (name !== undefined) e.name = name || undefined;
@@ -49,7 +58,7 @@ export class Ladder extends DurableObject<Env> {
     if (phase === NONE) return { rated: false, reason: "no such match" };
     if (phase !== SETTLED) { await this.track(id); return { rated: false, reason: "not settled yet" }; }
     if (!COUNTED.has(reason)) { await this.ctx.storage.put(`m:${id}`, { skipped: reason }); await this.untrack(id); return { rated: false, reason: "not a played game" }; }
-    const [a, b] = [await this.entry(m.players[0]), await this.entry(m.players[1])];
+    const [a, b] = [await this.entry(await this.seat(m.players[0], id)), await this.entry(await this.seat(m.players[1], id))];
     if (a.address === b.address) { await this.ctx.storage.put(`m:${id}`, { skipped: "self" }); await this.untrack(id); return { rated: false, reason: "self-play" }; }
     const score = winner === 0 ? 1 : winner === 1 ? 0 : 0.5;
     const [ra, rb] = elo(a.rating, b.rating, score, a.games, b.games);
@@ -89,9 +98,15 @@ export class Ladder extends DurableObject<Env> {
 
   /** One-time rebuild when the stored format changes (ratings are recomputed from the chain). */
   private async migrate() {
-    if ((await this.ctx.storage.get<number>("schema")) === 2) return;
+    const v = (await this.ctx.storage.get<number>("schema")) ?? 0;
+    if (v === SCHEMA) return;
+    // keep players' chosen names, client tags and the house difficulty notes; recompute every rating from the chain
+    const keep = new Map<string, unknown>();
+    for (const [k, e] of await this.ctx.storage.list<Entry>({ prefix: "p:" })) if (e.client !== "house" && (e.name || e.client !== "unknown")) keep.set(k, { address: e.address, name: e.name, client: e.client, rating: START_RATING, games: 0, w: 0, l: 0, d: 0 });
+    for (const [k, l] of await this.ctx.storage.list({ prefix: "hl:" })) keep.set(k, l);
     await this.ctx.storage.deleteAll();
-    await this.ctx.storage.put("schema", 2);
+    for (const [k, val] of keep) await this.ctx.storage.put(k, val);
+    await this.ctx.storage.put("schema", SCHEMA);
     await this.ctx.storage.setAlarm(Date.now() + 500);
   }
   async top(limit = 50) {

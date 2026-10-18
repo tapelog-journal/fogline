@@ -76,7 +76,7 @@
     </div>
     <div class="panel" id="pMatch">
       <h2>2 · Start a match</h2>
-      <div class="row"><button id="playBot" class="big">Play the TapeLog bot</button><button id="invite">Invite a friend</button></div>
+      <div class="row"><label class="tag" for="level">Bot level</label><select id="level"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select><button id="playBot" class="big">Play the TapeLog bot</button><button id="invite">Invite a friend</button></div>
       <div id="inviteBox" class="hidden"><div class="row">Send this link to your friend: <input id="inviteUrl" size="44" readonly><button id="copy">Copy</button></div><div class="tag">The match starts when they open it and join. They get their own free test player.</div></div>
       <div id="joinBox" class="hidden row"><span>You were invited to match <b id="joinId"></b>.</span><button id="join" class="big">Join match</button></div>
       <div class="row"><span class="tag">Your matches:</span><span id="mine" class="tag">none yet</span></div>
@@ -218,7 +218,7 @@ function show(j) {
   if (j.phase === "Open") { st = `Match #${j.matchId}: waiting for your opponent to join…`; sub = "Share the invite link. This page updates by itself."; }
   else if (needArmy) { st = `Match #${j.matchId}: place your army`; sub = `You are side ${j.yourSide}${mySide ? " (board shown from your side)" : ""}. Arrange your pieces, then confirm.`; }
   else if (j.phase === "Committing") { st = `Match #${j.matchId}: waiting for the opponent's army…`; }
-  else if (j.phase === "Playing" || j.phase === "PendingReveal") { st = j.yourTurn ? "Your turn: click a piece, then a square" : "Opponent's turn…"; sub = `Match #${j.matchId} · ply ${j.ply}` + (v.deadline ? ` · turn timer ${timer(v.deadline)}` : ""); }
+  else if (j.phase === "Playing" || j.phase === "PendingReveal") { st = j.yourTurn ? "Your turn: click a piece, then a square" : "Opponent's turn…"; sub = `Match #${j.matchId}${j.botLevel ? ` vs TapeLog bot (${j.botLevel})` : ""} · ply ${j.ply}` + (v.deadline ? ` · turn timer ${timer(v.deadline)}` : ""); }
   else { const won = v.winner === mySide, draw = v.winner === 2; st = draw ? "Draw" : won ? "🏆 You won!" : "You lost"; sub = `Match #${j.matchId} is over (${j.status ?? j.phase}). Start another one on the right.`; }
   $("status").textContent = st; $("sub").textContent = sub;
   const lines = [...(j.lastTurn ?? [])];
@@ -275,9 +275,11 @@ $("saveName").onclick = () => act("Saving your ladder name…", async () => {
   const r = await call("set-name", { name: $("ladderName").value.trim(), client: "browser" });
   $("sub").textContent = r.text;
 });
+$("level").value = localStorage.getItem("fogline.level") || "normal";
 $("playBot").onclick = () => act("Creating a match against the TapeLog bot (two testnet transactions)…", async () => {
   if (!sess()) throw new Error("get a free test player first");
-  const r = await call("play-bot", { ref: "web-" + Date.now().toString(36) });
+  localStorage.setItem("fogline.level", $("level").value);
+  const r = await call("play-bot", { level: $("level").value, ref: "web-" + Date.now().toString(36) });
   show(await call("state", { match: r.matchId })); wallet();
 });
 $("invite").onclick = () => act("Creating a match for you and a friend…", async () => {

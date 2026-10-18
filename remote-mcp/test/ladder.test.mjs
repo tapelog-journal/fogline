@@ -17,3 +17,23 @@ test("draw between equals changes nothing; upset moves more than expected win", 
 test("established players use K=24", () => {
   assert.deepEqual(elo(1400, 1400, 1, 30, 30), [1412, 1388]);
 });
+
+// bot levels (pure rules sim)
+const { playGame } = await import("./levels-sim.mjs");
+const lv = await import("./.build/levels.js");
+test("parseLevel accepts easy/normal/hard, defaults to normal, rejects junk", () => {
+  assert.equal(lv.parseLevel(undefined), "normal"); assert.equal(lv.parseLevel("HARD"), "hard"); assert.throws(() => lv.parseLevel("insane"));
+});
+test("hard inference respects moved pieces and composition", () => {
+  const rules = { PIECES: 16 };
+  const pieces = Array.from({ length: 32 }, (_, pid) => ({ pos: pid < 16 ? pid : 32 + pid, rank: 0, alive: true, revealed: false, moved: pid === 20, commitment: "" }));
+  const inf = lv.inferRanks({ board: [], pieces, match: {} }, 0);
+  assert.equal(inf.size, 16);
+  assert.ok(inf.get(20)[0] < 1e-9 && inf.get(20)[8] < 1e-9, "moved piece is never Beacon/Mine");
+  const beaconMass = [...inf.values()].reduce((a, d) => a + d[0], 0);
+  assert.ok(Math.abs(beaconMass - 1) < 1e-6, "exactly one Beacon in expectation");
+});
+test("hard beats normal and easy in offline self-play", () => {
+  let hard = 0; for (let g = 0; g < 40; g++) { const r = playGame(g % 2 ? "normal" : "hard", g % 2 ? "hard" : "normal"); if (r.winner === (g % 2 ? 1 : 0)) hard++; }
+  assert.ok(hard >= 24, `hard won ${hard}/40 vs normal`);
+});

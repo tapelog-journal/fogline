@@ -3,14 +3,14 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { decide } from "../../agent/src/bot";
-import { commitments, randomLayout, type Layout } from "../../agent/src/layout";
+import { decideLevel, layoutFor, type Level } from "../../agent/src/levels";
+import { commitments, type Layout } from "../../agent/src/layout";
 import { Phase, PIECES } from "../../agent/src/rules";
 import { gameCall, pub, readState, sendTx, tokenCall } from "./chain";
 import { cfg, ladder, MAX_HOUSE_MATCHES, type Env } from "./env";
 import { nonceStore } from "./store";
 
-interface HouseMatch { session?: string; layout?: Layout; added: number; log: string[]; minBlock?: string }
+interface HouseMatch { session?: string; level?: Level; layout?: Layout; added: number; log: string[]; minBlock?: string }
 
 export class House extends DurableObject<Env> {
   get address(): Address { return privateKeyToAccount(this.env.HOUSE_KEY as Hex).address; }
@@ -23,12 +23,13 @@ export class House extends DurableObject<Env> {
   async activeCount() { return Object.keys(await this.all()).length; }
 
   /** Register a match the house should play (called by the Player DO right after createMatch). */
-  async watch(id: string, session?: string): Promise<{ ok: boolean; reason?: string }> {
+  async watch(id: string, session?: string, level: Level = "normal"): Promise<{ ok: boolean; reason?: string }> {
     const m = await this.all();
     if (!m[id]) {
       if (Object.keys(m).length >= MAX_HOUSE_MATCHES) return { ok: false, reason: "the house bot is busy with too many matches; try again later" };
-      m[id] = { session, added: Date.now(), log: [] };
+      m[id] = { session, level, added: Date.now(), log: [] };
       await this.save(m);
+      try { await ladder(this.env).noteHouseLevel(id, level); } catch (e) { console.log("ladder level note failed", String(e).slice(0, 120)); }
     }
     await this.ctx.storage.setAlarm(Date.now() + 200);
     return { ok: true };
@@ -45,6 +46,7 @@ export class House extends DurableObject<Env> {
   private kickedAt = 0;
 
   async recentLog(id: string) { return (await this.all())[id]?.log ?? []; }
+  async levelOf(id: string): Promise<Level | undefined> { return (await this.all())[id]?.level; }
 
   private cur?: HouseMatch;
   private async tx(fn: string, data: Hex, to?: Address) {
@@ -108,10 +110,11 @@ export class House extends DurableObject<Env> {
     const side = mm.players[0].toLowerCase() === me ? 0 : mm.players[1].toLowerCase() === me ? 1 : -1;
     if (side < 0) return { nextMs: 0, remove: true };
     const now = BigInt(Math.floor(Date.now() / 1000) - 4); // a little behind wall clock to avoid early timeout claims
-    const action = decide(s, side, hm.layout, now);
+    const level = hm.level ?? "normal";
+    const action = decideLevel(s, side, hm.layout, now, level);
     switch (action.kind) {
       case "commit": {
-        const l = hm.layout ?? randomLayout(side);
+        const l = hm.layout ?? layoutFor(level, side);
         hm.layout = l;
         await this.save({ ...(await this.all()), [idStr]: hm }); // persist salts BEFORE committing
         const r = await this.tx("commitLayout", gameCall("commitLayout", [id, commitments(id, this.address, l)]));
