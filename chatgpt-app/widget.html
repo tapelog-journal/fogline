@@ -37,7 +37,7 @@
   .fl-sq { position: absolute; width: 10%; height: 8.4211%; box-sizing: border-box; border-radius: 6px; cursor: default; display: flex; align-items: center; justify-content: center; font-weight: 800; }
   .fl-sq.mov { cursor: pointer; }
   .fl-sq.mov:hover { box-shadow: inset 0 0 0 2px rgba(255,212,0,.55); }
-  .fl-sq.sel { box-shadow: inset 0 0 0 3px #ffd400, 0 0 14px rgba(255,212,0,.6); background: rgba(255,212,0,.12); }
+  .fl-sq.sel { box-shadow: inset 0 0 0 3px #ffffff, inset 0 0 0 6px #ffd400, 0 0 16px rgba(255,212,0,.8); background: rgba(255,212,0,.18); }
   .fl-sq.tgt { cursor: pointer; }
   .fl-sq.tgt::after { content: ""; width: 26%; height: 26%; border-radius: 50%; background: #ffd400; box-shadow: 0 0 10px #ffd400; opacity: .9; }
   .fl-sq.tgt.atk::after { width: 78%; height: 78%; background: transparent; border: 3px solid #ff4d3a; box-shadow: 0 0 12px #ff4d3a; box-sizing: border-box; }
@@ -75,6 +75,7 @@
   const CODE = ["B", "1", "2", "3", "4", "5", "6", "7", "M"];
   const RANKS = ["Beacon", "Ghost", "Scout", "Sapper", "Guard", "Knight", "Captain", "Warden", "Mine"];
 
+  const ORIGIN = "__FOGLINE_ORIGIN__"; // filled in by the server that serves this widget
   const st = { session: null, data: null, img: null, sel: null, busy: false, bridge: false, polls: 0 };
 
   // ---------------------------------------------------------------- host bridge (MCP Apps JSON-RPC over postMessage)
@@ -109,6 +110,24 @@
     const o = oa();
     if (o && o.callTool) return o.callTool(name, args);
     throw new Error("This chat app cannot run Fogline tools from the board. Ask the assistant to make the move instead.");
+  }
+  // If the host refuses a tool call from the board (for example a plan where custom apps are read-only),
+  // a tap still works: the board calls Fogline's own public HTTP API for that one action (declared in the
+  // widget CSP), then reloads itself with the read-only fogline_state tool.
+  const REST = { fogline_move: "move", fogline_auto_army: "auto-army", fogline_play_bot: "play-bot" };
+  async function act(name, args) {
+    try { return await callTool(name, args); }
+    catch (e) {
+      if (!REST[name] || !/^https:/.test(ORIGIN)) throw e;
+      const q = new URLSearchParams({ session: args.session });
+      if (args.matchId) q.set("match", String(args.matchId));
+      if (args.from) { q.set("from", args.from); q.set("to", args.to); if (st.data) q.set("ply", String(st.data.ply)); }
+      const r = await fetch(`${ORIGIN}/api/${REST[name]}?${q}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((x) => x.json());
+      if (!r.ok) return { isError: true, content: [{ type: "text", text: "Error: " + r.error }] };
+      if (name === "fogline_play_bot") return { structuredContent: { matchId: String(r.matchId) } };
+      try { return await callTool("fogline_state", { session: args.session, matchId: Number(r.matchId || args.matchId) }); }
+      catch (e2) { return { isError: true, content: [{ type: "text", text: (r.text || "Done.") + " (Refresh the board to see it.)" }] }; }
+    }
   }
   function tellModel(text) {
     try {
@@ -166,7 +185,7 @@
     s.textContent = d.yourTurn ? "Your turn: tap one of your pieces, then a highlighted square." : spect ? `Spectator view · ${d.phase}` : cap(d.status || d.phase);
     s.classList.toggle("turn", !!d.yourTurn);
     const log = $("fl-log"); log.innerHTML = "";
-    for (const line of [].concat(d.lastTurn || [], d.events || []).slice(-6)) { const li = document.createElement("li"); li.textContent = line; log.appendChild(li); }
+    for (const line of [...new Set([].concat(d.lastTurn || [], d.events || []))].slice(-6)) { const li = document.createElement("li"); li.textContent = line; log.appendChild(li); }
     $("fl-army").hidden = !d.canPlaceArmy;
     $("fl-new").hidden = !(d.phase === "Ended" || d.phase === "Settled");
     hint();
@@ -226,7 +245,7 @@
   async function run(label, name, args, after) {
     try {
       needSession(); hideErr(); busy(true, label);
-      const res = await callTool(name, args);
+      const res = await act(name, args);
       busy(false);
       onResult(res);
       if (after && res && !res.isError) after(res);
@@ -255,7 +274,7 @@
   $("fl-new").onclick = async () => {
     try {
       needSession(); hideErr(); busy(true, "Starting a new match vs the TapeLog bot…");
-      const r = await callTool("fogline_play_bot", { session: st.session });
+      const r = await act("fogline_play_bot", { session: st.session });
       const id = r && r.structuredContent && r.structuredContent.matchId;
       if (!id) throw new Error(((r && r.content) || []).map((c) => c.text || "").join(" ").slice(0, 300) || "could not start a match");
       busy(false);

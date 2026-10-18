@@ -10,7 +10,7 @@ import WIDGET from "../../chatgpt-app/widget.html";
 
 export const WIDGET_URI = "ui://fogline/board-v1.html";
 export const WIDGET_MIME = "text/html;profile=mcp-app";
-export const widgetHtml = () => WIDGET as string;
+export const widgetHtml = (origin: string) => (WIDGET as string).replace("__FOGLINE_ORIGIN__", origin);
 
 /** Tool-descriptor _meta for tools that render the board widget (and that the widget may call). */
 export function boardToolMeta(invoking: string, invoked: string) {
@@ -34,12 +34,12 @@ export function registerWidget(server: McpServer, origin: string) {
     contents: [{
       uri: WIDGET_URI,
       mimeType: WIDGET_MIME,
-      text: widgetHtml(),
+      text: widgetHtml(origin),
       _meta: {
-        ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [origin] } },
+        ui: { prefersBorder: false, csp: { connectDomains: [origin], resourceDomains: [origin] } },
         "openai/widgetDescription": "Shows the user's Fogline board and lets them move by tapping. The board already shows the state, so do not repeat the board as text; summarize what happened in one or two sentences.",
         "openai/widgetPrefersBorder": false,
-        "openai/widgetCSP": { connect_domains: [], resource_domains: [origin] },
+        "openai/widgetCSP": { connect_domains: [origin], resource_domains: [origin] },
       },
     }],
   }));

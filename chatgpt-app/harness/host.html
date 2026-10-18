@@ -80,6 +80,8 @@ window.__harness = { calls: [], modelContext: [] };
           break;
         case "tools/call":
           window.__harness.calls.push(m.params.name);
+          // mode=readonly: emulate a plan where the host only allows read-only tools from custom apps
+          if (MODE === "readonly" && !(tools.find((t) => t.name === m.params.name)?.annotations?.readOnlyHint)) { log("refusing write tool", m.params.name); return fail("This app can only use read-only tools on this plan"); }
           try { reply(await mcp("tools/call", m.params)); } catch (e) { fail(String(e)); }
           break;
         case "ui/update-model-context": window.__harness.modelContext.push(m.params); reply({}); break;

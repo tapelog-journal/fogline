@@ -15,9 +15,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const MCP_URL = process.env.MCP_URL || "https://fogline-mcp.tapelog.workers.dev/mcp";
 const PORT = Number(process.env.PORT || 8787);
 
-function forward(body) {
+function forward(body, target = MCP_URL) {
   return new Promise((resolve, reject) => {
-    const args = ["-sS", "-m", "170", "-X", "POST", MCP_URL, "-H", "content-type: application/json", "-H", "accept: application/json, text/event-stream", "--data-binary", "@-"];
+    const args = ["-sS", "-m", "170", "-X", "POST", target, "-H", "content-type: application/json", "-H", "accept: application/json, text/event-stream", "--data-binary", "@-"];
     if (process.env.RESOLVE) args.unshift("--resolve", process.env.RESOLVE);
     const p = execFile("curl", args, { maxBuffer: 64 * 1024 * 1024 }, (err, out) => (err ? reject(err) : resolve(out)));
     p.stdin.end(body);
@@ -30,6 +30,14 @@ createServer(async (req, res) => {
     let body = ""; for await (const c of req) body += c;
     try { const out = await forward(body); res.writeHead(200, { "content-type": "application/json" }); res.end(out); }
     catch (e) { res.writeHead(502, { "content-type": "application/json" }); res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32000, message: String(e) } })); }
+    return;
+  }
+  // /api-proxy/<action>?... -> <MCP origin>/api/<action>?... (lets a test browser reach the HTTP API through curl)
+  if (url.pathname.startsWith("/api-proxy/")) {
+    let body = ""; for await (const c of req) body += c;
+    const target = new URL(MCP_URL).origin + "/api/" + url.pathname.slice("/api-proxy/".length) + url.search;
+    try { const out = await forward(body || "{}", target); res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" }); res.end(out); }
+    catch (e) { res.writeHead(502); res.end(String(e)); }
     return;
   }
   if (url.pathname === "/" || url.pathname === "/host.html") {
