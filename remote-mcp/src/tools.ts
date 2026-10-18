@@ -28,19 +28,19 @@ const chainArg = z.number().int().optional().describe(`Optional. Only ${ALLOWED_
 const stakeArg = z.number().min(0).max(100).default(0).describe("Optional stake in fUSD, a valueless TESTNET token (0-100, default 0 = free). Winner takes both stakes.");
 const timeoutArg = z.number().int().min(60).max(3600).optional().describe("Seconds each side has per turn before the other side can claim a win (60-3600, default 600).");
 const RANK = z.enum(["Beacon", "Ghost", "Scout", "Sapper", "Guard", "Knight", "Captain", "Warden", "Mine"]);
-const RANK_IDX: Record<string, number> = { Beacon: 0, Ghost: 1, Scout: 2, Sapper: 3, Guard: 4, Knight: 5, Captain: 6, Warden: 7, Mine: 8 };
+export const RANK_IDX: Record<string, number> = { Beacon: 0, Ghost: 1, Scout: 2, Sapper: 3, Guard: 4, Knight: 5, Captain: 6, Warden: 7, Mine: 8 };
 
 function text(t: string, isError = false) {
   return { content: [{ type: "text" as const, text: `${t}\n\n${DISCLAIMER}` }], ...(isError ? { isError: true } : {}) };
 }
-function checkChain(chainId?: number) {
+export function checkChain(chainId?: number) {
   if (chainId !== undefined && chainId !== ALLOWED_CHAIN_ID) throw new Error(`chainId ${chainId} refused: Fogline remote MCP only works on Base Sepolia testnet (${ALLOWED_CHAIN_ID}).`);
 }
 function err(e: any) {
   const m = String(e?.message ?? e).replace(/^Error:\s*/, "");
   return text(`Error: ${m}`, true);
 }
-function fmtPlay(r: any) {
+export function fmtPlay(r: any) {
   const lines: string[] = [];
   if (r.events?.length) lines.push("What happened:\n- " + r.events.join("\n- "));
   if (r.summary) lines.push(`Match #${r.matchId}: ${r.summary}`);

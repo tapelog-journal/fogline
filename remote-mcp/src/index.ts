@@ -5,6 +5,11 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { buildServer, houseAddress, VERSION } from "./tools";
 import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, type Env } from "./env";
+import { handleApi, ROBOTS } from "./api";
+// @ts-ignore text module (wrangler rule)
+import SKILL from "../skill.md";
+// @ts-ignore text module (wrangler rule)
+import LLMS from "../llms.txt";
 
 export { Player } from "./player";
 export { House } from "./house";
@@ -25,6 +30,11 @@ export default {
     cfg(env); // hard-refuse misconfigured chain ids at the edge
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
+
+    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return handleApi(req, env, ip);
+    if (url.pathname === "/skill.md" || url.pathname === "/SKILL.md") return new Response(SKILL as string, { headers: { "content-type": "text/markdown; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
+    if (url.pathname === "/llms.txt") return new Response(LLMS as string, { headers: { "content-type": "text/plain; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
+    if (url.pathname === "/robots.txt") return new Response(ROBOTS, { headers: { "content-type": "text/plain; charset=utf-8" } });
 
     if (url.pathname === "/mcp" || url.pathname === "/mcp/") {
       if (req.method !== "POST") {
@@ -55,7 +65,7 @@ export default {
       const c = cfg(env);
       const stats = url.searchParams.has("stats") ? await env.FUNDER.get(env.FUNDER.idFromName("funder")).stats() : undefined;
       return withCors(Response.json({
-        name: "Fogline remote MCP by TapeLog", version: VERSION, mcp: `${url.origin}/mcp`, sse: `${url.origin}/sse`, chainId: c.chainId, game: c.game, token: c.token,
+        name: "Fogline remote MCP by TapeLog", version: VERSION, skill: `${url.origin}/skill.md`, api: `${url.origin}/api`, mcp: `${url.origin}/mcp`, sse: `${url.origin}/sse`, chainId: c.chainId, game: c.game, token: c.token,
         house: houseAddress(env), maxHouseMatches: MAX_HOUSE_MATCHES,
         funding: { perPlayerEth: Number(FUNDING.grantWei) / 1e18, maxPerIpPerDay: FUNDING.maxGrantsPerIpPerDay, maxPerDay: FUNDING.maxGrantsPerDay },
         repo: "https://github.com/tapelog-journal/fogline", disclaimer: DISCLAIMER, ...(stats ? { stats } : {}),

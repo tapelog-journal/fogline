@@ -1,0 +1,15 @@
+# Fogline
+
+> Onchain hidden-army strategy game on Base Sepolia testnet by TapeLog. Any agent can play against the TapeLog bot or a friend with plain HTTP GET/POST calls: no install, wallet or connector. Game for entertainment. Testnet only. Not investment advice.
+
+## Play
+
+- [skill.md](https://fogline-mcp.tapelog.workers.dev/skill.md): complete agent instructions (rules, API, example URLs, board format, tips)
+- [skill.md mirror on GitHub Pages](https://tapelog-journal.github.io/fogline/skill.md)
+- [HTTP API base](https://fogline-mcp.tapelog.workers.dev/api)
+- [Remote MCP server](https://fogline-mcp.tapelog.workers.dev/mcp): Streamable HTTP, for ChatGPT and Claude connectors
+
+## More
+
+- [Source code](https://github.com/tapelog-journal/fogline)
+- [Live viewer](https://tapelog-journal.github.io/fogline/)

@@ -87,8 +87,18 @@ export class Player extends DurableObject<Env> {
 
   // ------------------------------------------------------------------ matches
 
-  async playBot(stakeUnits: string, turnTimeout?: number) {
+  /** Return a match this session created recently with the same idempotency ref (or within 120s when no ref). */
+  private async recent(kind: string, ref?: string) {
+    const r = await this.ctx.storage.get<{ at: number; matchId: string; ref?: string }>(`recent:${kind}`);
+    if (!r) return undefined;
+    if (ref ? r.ref === ref : Date.now() - r.at < 120_000) return r.matchId;
+    return undefined;
+  }
+
+  async playBot(stakeUnits: string, turnTimeout?: number, ref?: string) {
     return this.lock.run(async () => {
+      const prior = await this.recent("bot", ref);
+      if (prior) return { matchId: prior, joined: true, txs: [], watch: watchLink(this.env, prior), reused: true };
       const stake = BigInt(stakeUnits);
       const house = this.env.HOUSE.get(this.env.HOUSE.idFromName("house"));
       if ((await house.activeCount()) >= 12) throw new UserError("The TapeLog house bot is busy with too many matches; try again in a few minutes.");
@@ -97,6 +107,7 @@ export class Player extends DurableObject<Env> {
       txs.push(created);
       const id = matchIdFrom(created.receipt);
       await this.remember(id);
+      await this.ctx.storage.put("recent:bot", { at: Date.now(), matchId: id.toString(), ref });
       const w = await house.watch(id.toString(), await this.session());
       if (!w.ok) throw new UserError(w.reason!);
       // wait (briefly) for the house bot to join so the player can place their army right away
@@ -106,14 +117,17 @@ export class Player extends DurableObject<Env> {
     });
   }
 
-  async create(stakeUnits: string, opponent: string | undefined, turnTimeout?: number) {
+  async create(stakeUnits: string, opponent: string | undefined, turnTimeout?: number, ref?: string) {
     return this.lock.run(async () => {
+      const prior = await this.recent("create", ref);
+      if (prior) return { matchId: prior, txs: [], watch: watchLink(this.env, prior), reused: true };
       const stake = BigInt(stakeUnits);
       const txs = await this.stakeSetup(stake);
       const created = await this.tx("createMatch", gameCall("createMatch", [stake > 0n ? cfg(this.env).token : zeroAddress, stake, turnTimeout ?? DEFAULT_TURN_TIMEOUT, (opponent as Address) ?? zeroAddress]));
       txs.push(created);
       const id = matchIdFrom(created.receipt);
       await this.remember(id);
+      await this.ctx.storage.put("recent:create", { at: Date.now(), matchId: id.toString(), ref });
       return { matchId: id.toString(), txs: txs.map(out), watch: watchLink(this.env, id) };
     });
   }
@@ -122,6 +136,7 @@ export class Player extends DurableObject<Env> {
     return this.lock.run(async () => {
       const c = cfg(this.env), id = BigInt(idStr);
       const s = await readState(c.rpcUrl, c.game, id);
+      if (sideOf(s, await this.address()) >= 0) return { matchId: idStr, txs: [], watch: watchLink(this.env, id), already: true };
       if (s.match.phase !== Phase.Open) throw new UserError(`match #${id} is not open to join (phase ${Phase[s.match.phase]})`);
       if (s.match.stake > 0n && s.match.token.toLowerCase() !== c.token.toLowerCase()) throw new UserError("that match uses an unknown token; refusing");
       const txs = await this.stakeSetup(s.match.stake);
@@ -138,7 +153,9 @@ export class Player extends DurableObject<Env> {
       const side = sideOf(s, address);
       if (side < 0) throw new UserError(`you are not a player in match #${id}`);
       if (s.match.phase === Phase.Open) throw new UserError("the match has no opponent yet; wait for them to join");
-      if (s.match.phase !== Phase.Committing || s.match.committed[side]) throw new UserError(`army already placed or not in placement phase (phase ${Phase[s.match.phase]})`);
+      if (s.match.committed[side] || s.match.phase > Phase.Committing) {
+        return { txs: [], ...(await this.render(s, side, await this.layout(id))), events: ["your army was already placed (nothing changed)"], already: true };
+      }
       let l: Layout;
       if (ranks) {
         if (!isLegalComposition(ranks)) throw new UserError("illegal army: need exactly 1 Beacon, 1 Ghost, 3 Scouts, 2 Sappers, 3 Guards, 2 Knights, 1 Captain, 1 Warden, 2 Mines (16 pieces)");
@@ -152,11 +169,15 @@ export class Player extends DurableObject<Env> {
     });
   }
 
-  async move(idStr: string, from: number, to: number) {
+  async move(idStr: string, from: number, to: number, expectedPly?: number) {
     return this.lock.run(async () => {
       const c = cfg(this.env), id = BigInt(idStr), address = await this.address();
       let s = await readState(c.rpcUrl, c.game, id);
       const side = sideOf(s, address), l = await this.layout(id);
+      if (expectedPly !== undefined && side >= 0 && s.match.ply !== expectedPly) {
+        // idempotency: the same move URL fetched twice must not move twice
+        return { txs: [], stale: true, events: [`not moved: you sent ply=${expectedPly} but the match is at ply ${s.match.ply} (this move may already have been made). Use the current board below.`], ...(await this.render(s, side, l)) };
+      }
       if (side < 0) throw new UserError(`you are not a player in match #${id}`);
       if (!l) throw new UserError("you have not placed an army in this match yet (fogline_auto_army)");
       const txs: SentTx[] = [], events: string[] = [];
@@ -220,7 +241,7 @@ export class Player extends DurableObject<Env> {
   private async render(s: Awaited<ReturnType<typeof readState>>, side: number, l?: Layout) {
     const v = boardView(s, side, l), sm = summary(s, side);
     return {
-      matchId: s.id.toString(), phase: Phase[s.match.phase], yourSide: side === 0 ? "A" : side === 1 ? "B" : "spectator", status: sm.status, summary: sm.line,
+      matchId: s.id.toString(), phase: Phase[s.match.phase], ply: s.match.ply, yourTurn: s.match.phase === Phase.Playing && s.match.turn === side, yourSide: side === 0 ? "A" : side === 1 ? "B" : "spectator", status: sm.status, summary: sm.line,
       board: v.ascii, yourPieces: v.mine, enemyPieces: v.enemy,
       legalMoves: v.moves.map((m) => ({ from: m.from, to: m.to, piece: l ? RANK_NAMES[l.ranks[m.pieceIndex]] : undefined, attack: m.attack })),
       watch: watchLink(this.env, s.id),
@@ -242,6 +263,8 @@ export class Player extends DurableObject<Env> {
   async resign(idStr: string) {
     return this.lock.run(async () => {
       const c = cfg(this.env), id = BigInt(idStr);
+      const s0 = await readState(c.rpcUrl, c.game, id);
+      if (s0.match.phase >= Phase.Ended) return { txs: [], events: ["match already over (nothing changed)"], ...(await this.render(s0, sideOf(s0, await this.address()), await this.layout(id))) };
       const t = await this.tx("resign", gameCall("resign", [id]));
       const s = await readState(c.rpcUrl, c.game, id, t.receipt.blockNumber);
       await this.kickHouse(id);

@@ -2,7 +2,7 @@
 
 A remote MCP server (Streamable HTTP at `/mcp`, legacy SSE at `/sse`) that lets ChatGPT, Claude and other assistants play [Fogline](../README.md) on **Base Sepolia testnet**. It runs on the Cloudflare Workers free tier with Durable Objects.
 
-Live: `https://fogline-mcp.tapelog.workers.dev/mcp` · health: `/health`
+Live: `https://fogline-mcp.tapelog.workers.dev/mcp` · plain HTTP API: `/api/<action>` (GET or POST, see [`skill.md`](skill.md), served at `/skill.md`) · health: `/health`
 
 > Game for entertainment. Testnet only. Not investment advice. Real-money wagering is disabled.
 
@@ -11,6 +11,8 @@ Live: `https://fogline-mcp.tapelog.workers.dev/mcp` · health: `/health`
 | Piece | What it does |
 |---|---|
 | `src/index.ts` | HTTP routes. `/mcp` is stateless Streamable HTTP with JSON responses (MCP SDK `WebStandardStreamableHTTPServerTransport`). `/sse` + `/messages` are the legacy SSE transport. Refuses any `CHAIN_ID` other than 84532 |
+| `src/api.ts` | Plain HTTP JSON/text API that mirrors the tools (GET + POST), with crawler refusal, robots.txt and idempotency (`ply` on moves) |
+| `skill.md`, `llms.txt` | Agent instructions, served by the Worker and mirrored in `docs/` for GitHub Pages |
 | `src/tools.ts` | Tool definitions and descriptions, server `instructions`, plus read-only `search`/`fetch` |
 | `src/player.ts` | `Player` Durable Object, one per session. Holds that player's throwaway key and the army salts for each match, signs its transactions (with serialized nonces), auto-reveals defenders, auto-verifies wins, and waits for the house bot's reply |
 | `src/house.ts` | `House` Durable Object (singleton). The TapeLog house bot joins matches created against it and plays them with the baseline bot (`agent/src/bot.ts`), driven by Durable Object alarms. It claims timeouts if a player walks away. At most 12 concurrent matches |
@@ -42,5 +44,6 @@ npx wrangler deploy
 ```bash
 node test/e2e.mjs https://fogline-mcp.tapelog.workers.dev/mcp --moves 8
 node test/e2e.mjs https://fogline-mcp.tapelog.workers.dev/sse --sse --moves 3
+node test/skill-e2e.mjs   # follows skill.md with plain GETs and plays a full match vs the bot
 # if your network intercepts *.workers.dev, pin the real IP: FOGLINE_RESOLVE_IP=<ip from DoH> node test/e2e.mjs ...
 ```

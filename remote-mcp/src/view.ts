@@ -3,7 +3,7 @@ import { BLOCKED, END_REASONS, legalMoves, Phase, PIECES, RANK_NAMES, SIZE, type
 import type { Layout } from "../../agent/src/layout";
 
 const SHORT = ["B", "G", "S", "P", "U", "K", "C", "W", "M"]; // Beacon Ghost Scout sapPer gUard Knight Captain Warden Mine
-export const LEGEND = "Legend: +X = your piece (X = rank letter), ?? = hidden enemy piece, -X = revealed enemy piece, ~~ = fog bank (impassable), . = empty. Rank letters: B Beacon, G Ghost, S Scout, P Sapper, U Guard, K Knight, C Captain, W Warden, M Mine.";
+export const LEGEND = "Legend: +X = your piece (X = rank letter), ?? = hidden enemy piece, -X = revealed enemy piece, ~~ = fog bank (impassable), .. = empty. Rank letters: B Beacon, G Ghost, S Scout, P Sapper, U Guard, K Knight, C Captain, W Warden, M Mine.";
 
 export function sideOf(s: GameState, addr: string): number {
   const a = addr.toLowerCase();
@@ -15,19 +15,19 @@ export function phaseName(p: number) { return Phase[p] ?? String(p); }
 export function boardView(s: GameState, side: number, layout?: Layout) {
   const rows: string[] = [];
   for (let r = SIZE - 1; r >= 0; r--) {
-    let line = `${String(r * 8).padStart(2)} |`;
+    const cells: string[] = [];
     for (let c = 0; c < SIZE; c++) {
       const sq = r * SIZE + c;
-      if (BLOCKED.has(sq)) { line += " ~~"; continue; }
+      if (BLOCKED.has(sq)) { cells.push("~~"); continue; }
       const cell = s.board[sq];
-      if (!cell) { line += "  ."; continue; }
+      if (!cell) { cells.push(".."); continue; }
       const pid = cell - 1, owner = Math.floor(pid / PIECES), p = s.pieces[pid];
-      if (owner === side) line += " +" + (layout ? SHORT[layout.ranks[pid % PIECES]] : p.revealed ? SHORT[p.rank] : "?");
-      else line += p.revealed ? " -" + SHORT[p.rank] : " ??";
+      if (owner === side) cells.push("+" + (layout ? SHORT[layout.ranks[pid % PIECES]] : p.revealed ? SHORT[p.rank] : "?"));
+      else cells.push(p.revealed ? "-" + SHORT[p.rank] : "??");
     }
-    rows.push(line);
+    rows.push(`${String(r * 8).padStart(2, "0")}| ${cells.join(" ")}`);
   }
-  rows.push("    " + Array.from({ length: SIZE }, (_, c) => "  " + c).join("") + "   (column; square = row*8 + column, row start shown at left)");
+  rows.push("sq| c0 c1 c2 c3 c4 c5 c6 c7  (square = row start at left + column)");
   const mine: { square: number; rank: string; revealed: boolean }[] = [];
   const enemy: { square: number; rank: string; moved: boolean }[] = [];
   for (let pid = 0; pid < 2 * PIECES; pid++) {
@@ -47,8 +47,8 @@ export function summary(s: GameState, side: number) {
   let status: string;
   switch (m.phase) {
     case Phase.Open: status = "waiting for an opponent to join"; break;
-    case Phase.Committing: status = !m.committed[side] ? "place your army now (fogline_auto_army or fogline_set_army)" : "waiting for the opponent to place their army"; break;
-    case Phase.Playing: status = m.turn === side ? "YOUR TURN: call fogline_move" : "opponent's turn"; break;
+    case Phase.Committing: status = !m.committed[side] ? "place your army now (auto-army or set-army)" : "waiting for the opponent to place their army"; break;
+    case Phase.Playing: status = m.turn === side ? "YOUR TURN: make a move" : "opponent's turn"; break;
     case Phase.PendingReveal: status = m.turn === side ? "your defender must be revealed (handled automatically on your next call)" : "waiting for the opponent to reveal the defending piece"; break;
     case Phase.Ended: status = `game over: ${m.winner === 2 ? "draw" : m.winner === side ? "YOU WON" : "you lost"} (${END_REASONS[m.reason]}); waiting for the winner's army check`; break;
     case Phase.Settled: status = `settled: ${m.winner === 2 ? "draw" : m.winner === side ? "YOU WON" : "you lost"} (${END_REASONS[m.reason]})`; break;
