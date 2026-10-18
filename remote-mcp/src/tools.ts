@@ -6,15 +6,16 @@ import type { Hex } from "viem";
 import { Phase } from "../../agent/src/rules";
 import { readState } from "./chain";
 import { ALLOWED_CHAIN_ID, cfg, DISCLAIMER, FUNDING, watchLink, type Env } from "./env";
-import { boardView, LEGEND, summary } from "./view";
+import { boardView, boardMd, LEGEND, MD_LEGEND, parseSquare, summary } from "./view";
+import { mdPage } from "./md";
 
 export const VERSION = "0.1.0";
 
 export const INSTRUCTIONS = `Fogline is a hidden-army strategy game on Base Sepolia TESTNET (no real money). To play: 1) fogline_new_player once and remember the session it returns (pass it to every later call). 2) fogline_play_bot to start a match vs the TapeLog house bot (or fogline_create/fogline_join vs a friend). 3) fogline_auto_army (or fogline_set_army). 4) Loop: fogline_move with a from/to pair from legalMoves; the bot replies automatically and the result includes the new board. Use fogline_state to look again. Share the watch link. ${DISCLAIMER}`;
 
 export const RULES = `FOGLINE RULES (an original TapeLog game)
-Board: 8x8, squares numbered 0-63 as row*8+column (row 0 at the bottom). Squares 26 and 37 are fog banks: nobody can enter or pass them.
-Armies: each side has 16 pieces placed secretly on its two home rows (side A: squares 0-15, side B: 48-63). Only a hash of each piece is onchain until it is revealed (commit-reveal), so your opponent cannot see your ranks.
+Board: 8x8. Squares are named like chess: files a-h (left to right) and ranks 1-8 (rank 1 is side A's home edge), e.g. c2. Squares c4 and f5 are fog banks: nobody can enter or pass them.
+Armies: each side has 16 pieces placed secretly on its two home ranks (side A: a1-h2, side B: a7-h8). Only a hash of each piece is onchain until it is revealed (commit-reveal), so your opponent cannot see your ranks.
 Pieces (rank number, count): Beacon (0, x1, cannot move; if it is captured you lose), Ghost (1, x1, weakest but defeats the Warden when the Ghost attacks), Scout (2, x3, moves 1-3 squares in a straight line; moving 2+ squares reveals it), Sapper (3, x2, defuses Mines), Guard (4, x3), Knight (5, x2), Captain (6, x1), Warden (7, x1, strongest), Mine (8, x2, cannot move; destroys any attacker except a Sapper and is used up).
 Moves: one piece per turn, one square up/down/left/right (Scouts up to 3 in a line, no jumping). Moving onto an enemy piece is an attack: both pieces are revealed and the higher rank wins; on a tie the defender holds. Beacon: any attacker captures it and wins. Mine: attacker and Mine are both removed, except a Sapper which removes the Mine and survives.
 Win: capture the enemy Beacon. You also win if the opponent resigns or lets their turn timer run out. After a win the winner's whole army is checked onchain (handled automatically here). 400 plies = draw.
@@ -41,16 +42,7 @@ function err(e: any) {
   return text(`Error: ${m}`, true);
 }
 export function fmtPlay(r: any) {
-  const lines: string[] = [];
-  if (r.events?.length) lines.push("What happened:\n- " + r.events.join("\n- "));
-  if (r.summary) lines.push(`Match #${r.matchId}: ${r.summary}`);
-  if (r.board) lines.push("Board (your view, row 7 at top):\n" + r.board + "\n" + LEGEND);
-  if (r.legalMoves?.length) lines.push(`Your legal moves (from->to): ${r.legalMoves.map((m: any) => `${m.from}->${m.to}${m.attack ? " (attack)" : ""}`).join(", ")}`);
-  if (r.yourPieces) lines.push("Your pieces: " + r.yourPieces.map((p: any) => `${p.square}=${p.rank}`).join(", "));
-  if (r.enemyPieces) lines.push("Enemy pieces: " + r.enemyPieces.map((p: any) => `${p.square}=${p.rank}${p.rank === "hidden" && !p.moved ? "(never moved)" : ""}`).join(", "));
-  if (r.txs?.length) lines.push("Onchain transactions:\n" + r.txs.map((t: any) => `- ${t.fn}: ${t.url}`).join("\n"));
-  if (r.watch) lines.push(`Watch live: ${r.watch}`);
-  return lines.join("\n\n");
+  return "Show the user the board below as a markdown table exactly as given (not in a code block; do not reformat it).\n\n" + mdPage(r);
 }
 
 const DOCS: Record<string, { title: string; text: () => string; url: string }> = {
@@ -138,7 +130,7 @@ export function buildServer(env: Env, ip: string) {
 
   server.registerTool("fogline_set_army", {
     title: "Place a custom army",
-    description: "Use this instead of fogline_auto_army when the user wants to choose the layout. Give exactly 16 rank names in order of your starting squares, ascending (side A: squares 0..15, i.e. back row 0-7 then front row 8-15; side B: squares 48..63, i.e. front row 48-55 then back row 56-63). Must contain exactly: 1 Beacon, 1 Ghost, 3 Scout, 2 Sapper, 3 Guard, 2 Knight, 1 Captain, 1 Warden, 2 Mine.",
+    description: "Use this instead of fogline_auto_army when the user wants to choose the layout. Give exactly 16 rank names in order of your starting squares (side A: a1..h1 then a2..h2; side B: a7..h7 then a8..h8). Must contain exactly: 1 Beacon, 1 Ghost, 3 Scout, 2 Sapper, 3 Guard, 2 Knight, 1 Captain, 1 Warden, 2 Mine.",
     inputSchema: { session: sessionArg, matchId: matchArg, ranks: z.array(RANK).length(16).describe("16 rank names in starting-square order.") }, annotations: WR,
   }, async ({ session, matchId, ranks }) => {
     try { return text("Custom army placed (hidden onchain as hashes).\n\n" + fmtPlay(await player(session).commitArmy(String(matchId), ranks.map((r) => RANK_IDX[r])))); } catch (e) { return err(e); }
@@ -146,11 +138,15 @@ export function buildServer(env: Env, ip: string) {
 
   server.registerTool("fogline_move", {
     title: "Make a move",
-    description: "Use this on your turn. Moves your piece from square `from` to square `to` (pick from legalMoves). Moving onto an enemy piece attacks it. Reveals are handled automatically. When playing the house bot, this waits for the bot's reply and returns what happened plus the new board and your next legal moves.",
-    inputSchema: { session: sessionArg, matchId: matchArg, from: z.number().int().min(0).max(63).describe("Square of your piece (row*8+col)."), to: z.number().int().min(0).max(63).describe("Destination square (row*8+col).") },
+    description: "Use this on your turn. Moves your piece from square `from` to square `to`, written like b2 and b3 (pick from the listed moves). Moving onto an enemy piece attacks it. Reveals are handled automatically. When playing the house bot, this waits for the bot's reply and returns what happened plus the new board and your next legal moves.",
+    inputSchema: { session: sessionArg, matchId: matchArg, from: z.union([z.string(), z.number()]).describe("Square of your piece, e.g. \"b2\" (numeric 0-63 also accepted)."), to: z.union([z.string(), z.number()]).describe("Destination square, e.g. \"b3\".") },
     annotations: WR,
   }, async ({ session, matchId, from, to }) => {
-    try { return text(fmtPlay(await player(session).move(String(matchId), from, to))); } catch (e) { return err(e); }
+    try {
+      const f = parseSquare(from), t = parseSquare(to);
+      if (Number.isNaN(f) || Number.isNaN(t)) throw new Error("from/to must be squares like \"b2\" (a1..h8)");
+      return text(fmtPlay(await player(session).move(String(matchId), f, t)));
+    } catch (e) { return err(e); }
   });
 
   server.registerTool("fogline_state", {
@@ -192,7 +188,7 @@ export function buildServer(env: Env, ip: string) {
     else if (/^match:\d+$/.test(id)) {
       const mid = BigInt(id.slice(6)), s = await readState(c.rpcUrl, c.game, mid);
       if (s.match.phase === Phase.None) doc = { id, title: `Match #${mid}`, text: "No such match.", url: watchLink(env, mid) };
-      else { const v = boardView(s, -1), sm = summary(s, -1); doc = { id, title: `Fogline match #${mid}`, text: `${sm.line}\n\n${v.ascii}\n${LEGEND}`, url: watchLink(env, mid), metadata: { chainId: String(ALLOWED_CHAIN_ID), game: c.game } }; }
+      else { const sm = summary(s, -1); doc = { id, title: `Fogline match #${mid}`, text: `${sm.line}\n\n${boardMd(s, -1)}\n\n${MD_LEGEND}`, url: watchLink(env, mid), metadata: { chainId: String(ALLOWED_CHAIN_ID), game: c.game } }; }
     } else doc = { id, title: "Not found", text: "Unknown id. Try 'rules', 'how-to-play' or 'match:<number>'.", url: "https://github.com/tapelog-journal/fogline" };
     return { content: [{ type: "text" as const, text: JSON.stringify(doc) }], structuredContent: doc };
   });

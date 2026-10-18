@@ -9,7 +9,7 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 const skill = await get(skillUrl);
 const base = skill.match(/API base: `([^`]+)`/)[1];
-const newPlayer = skill.match(/`(https:\/\/[^`]+\/api\/new-player)`/)[1];
+const newPlayer = skill.match(/`(https:\/\/[^`?]+\/api\/new-player)[^`]*`/)[1]; // JSON mode for the script
 log("skill.md read; API base", base);
 const np = await get(newPlayer);
 if (!np.ok) throw new Error(np.error);
@@ -25,19 +25,25 @@ while (r.phase !== "Settled" && moves < 200) {
   if (!r.ok) { log("error:", r.error); await new Promise((s) => setTimeout(s, 4000)); r = await get(`${base}/state?session=${np.session}&match=${matchId}`); continue; }
   if (!r.moveUrls?.length) { await new Promise((s) => setTimeout(s, 4000)); r = await get(r.next.state); continue; }
   // simple policy: attack with anything except the Warden/Captain when target unknown; else advance
-  const beacon = Number((r.yourPieces.match(/(\d+)=Beacon/) ?? [])[1] ?? -99);
-  const scored = r.legalMoves.map((m, i) => { const [ft, piece] = m.split(":"); const [f, t] = ft.replace("x", "").split("->").map(Number); let s = Math.random() * 3 + (t - f) / 8 * 2;
-    if (f === beacon + 8 || f === beacon - 1 || f === beacon + 1) s -= 20; /* keep the Beacon guards in place (skill.md tip) */
-    if (ft.endsWith("x")) s += ["Warden", "Captain"].includes(piece) ? -2 : 6; return { s, i }; }).sort((a, b) => b.s - a.s);
+  const sq = (c) => (c.charCodeAt(0) - 97) + (Number(c[1]) - 1) * 8;
+  const beacon = sq((r.yourPieces.match(/([a-h][1-8]) Beacon/) ?? [, "z9"])[1]);
+  const scored = r.legalMoves.map((m, i) => {
+    const [, piece, f, t] = m.match(/^(\S+) ([a-h][1-8]) → ([a-h][1-8])/); const F = sq(f), T = sq(t), attack = m.includes("⚔️");
+    let s = Math.random() * 3 + (T - F) / 8 * 2;
+    if (F === beacon + 8 || F === beacon - 1 || F === beacon + 1) s -= 20; // keep the Beacon guards in place (skill.md tip)
+    if (attack) s += ["Warden", "Captain"].includes(piece) ? -2 : 6;
+    return { s, i };
+  }).sort((a, b) => b.s - a.s);
   const url = r.moveUrls[scored[0].i];
   const nr = await get(url); moves++;
+  if (moves === 6) { const mid = await get(url.replace(/move\?/, "state?").replace(/&from=.*$/, "") + "&format=md"); (await import("node:fs")).writeFileSync("/tmp/board-md-sample.md", String(mid)); }
   if (!staleChecked && nr.ok) { const dup = await get(url); log("refetch same move URL ->", dup.stale ? "stale:true (not moved twice)" : "MOVED AGAIN?!", "ply", dup.ply); staleChecked = true; }
   r = nr;
-  log(`move ${moves}:`, r.ok ? (r.events ?? []).join(" | ") + ` [ply ${r.ply}, ${r.phase}]` : r.error);
+  log(`move ${moves}:`, r.ok ? (r.lastTurn ?? []).join(" | ") + ` [ply ${r.ply}, ${r.phase}]` : r.error);
 }
 console.log(r.board);
 log("final:", r.status, "| txs:", r.txs?.join(" "));
 log("watch:", watch);
-const txt = await get(`${base}/state?session=${np.session}&match=${matchId}&format=text`);
-console.log("--- format=text sample ---\n" + String(txt).slice(0, 600));
+const md = await get(`${base}/state?session=${np.session}&match=${matchId}&format=md`);
+console.log("--- format=md sample ---\n" + String(md).slice(0, 1500));
 console.log(JSON.stringify({ matchId, moves, phase: r.phase, status: r.status, watch }));

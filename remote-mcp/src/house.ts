@@ -152,6 +152,11 @@ export class House extends DurableObject<Env> {
           try { await this.env.PLAYER.get(this.env.PLAYER.idFromName(hm.session)).autoSettle(idStr); } catch (e) { console.log("autoSettle failed", String(e)); }
           return { nextMs: 5000 };
         }
+        // Our attack is waiting for the player's defender reveal: the player's session does it automatically.
+        if (mm.phase === Phase.PendingReveal && mm.turn !== side && hm.session) {
+          try { await this.env.PLAYER.get(this.env.PLAYER.idFromName(hm.session)).autoReveal(idStr); } catch (e) { console.log("autoReveal failed", String(e)); }
+          return { nextMs: 3000 };
+        }
         // Waiting on the human: wake up at their deadline to claim a timeout (the Player DO kicks us on every move).
         const left = Number(mm.deadline) - Math.floor(Date.now() / 1000);
         return { nextMs: Math.max(2000, Math.min((left + 6) * 1000, 3_600_000)) };

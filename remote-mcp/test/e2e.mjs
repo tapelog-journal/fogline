@@ -38,15 +38,16 @@ const pb = await call("fogline_play_bot", { session, stake: 0, turnTimeoutSecond
 const matchId = Number(pb.match(/Match #(\d+)/)[1]);
 let out = await call("fogline_auto_army", { session, matchId });
 for (let i = 0; i < moves; i++) {
-  const m = out.match(/Your legal moves \(from->to\): (.*)/);
+  const lines = [...out.matchAll(/^- \*\*\S+ ([a-h][1-8])\*\* → (.*)$/gm)];
+  const m = lines.length ? [null, lines.flatMap((l) => l[2].split(" · ").map((t) => `${l[1]}->${t.replace("⚔️", "")}`)).join(", ")] : null;
   if (!m) {
     if (/game over|settled/i.test(out)) break;
-    for (let k = 0; k < 8 && !/Your legal moves/.test(out); k++) { await new Promise((r) => setTimeout(r, 5000)); out = await call("fogline_state", { session, matchId }); }
-    i--; if (!/Your legal moves/.test(out)) break; continue;
+    for (let k = 0; k < 8 && !/Your moves/.test(out); k++) { await new Promise((r) => setTimeout(r, 5000)); out = await call("fogline_state", { session, matchId }); }
+    i--; if (!/Your moves/.test(out)) break; continue;
   }
-  const list = m[1].split(", ").map((s) => s.split(" ")[0].split("->").map(Number));
+  const list = m[1].split(", ").map((s) => s.split("->"));
   // prefer forward moves (side A advances up)
-  list.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]) + (Math.random() - 0.5) * 6);
+  list.sort((a, b) => (Number(b[1][1]) - Number(b[0][1])) - (Number(a[1][1]) - Number(a[0][1])) + (Math.random() - 0.5) * 3);
   const [from, to] = list[0];
   out = await call("fogline_move", { session, matchId, from, to });
 }

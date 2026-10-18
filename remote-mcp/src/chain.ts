@@ -142,26 +142,30 @@ export function withRevertName(e: any) {
   return e;
 }
 
-/** Plain-language narration of match events in [fromBlock, toBlock] from `side`'s point of view. */
-export async function narrate(rpc: string, game: Address, id: bigint, fromBlock: bigint, toBlock: bigint, side: number, names: string[]): Promise<string[] | undefined> {
+/** Plain-language narration of match events in [fromBlock, toBlock] from `side`'s point of view, with a1-h8 coordinates. */
+export async function narrate(rpc: string, game: Address, id: bigint, fromBlock: bigint, toBlock: bigint, side: number, names: string[]): Promise<{ lines: string[]; last?: { from: number; to: number } } | undefined> {
+  const co = (sq: number) => `${"abcdefgh"[sq % 8]}${Math.floor(sq / 8) + 1}`;
   try {
+    if (toBlock < fromBlock) return { lines: [] };
+    if (toBlock - fromBlock > 5000n) fromBlock = toBlock - 5000n;
     const logs = await pub(rpc).getLogs({ address: game, fromBlock, toBlock, topics: [null, `0x${id.toString(16).padStart(64, "0")}` as Hex] } as any);
     const ev = parseEventLogs({ abi: foglineAbi, logs: logs as any });
-    const who = (s: number) => (s === side ? "you" : "opponent");
-    const whose = (pid: number) => (Math.floor(pid / 16) === side ? "your" : "opponent's");
-    const OUT = ["attacker wins", "defender holds", "both pieces removed"];
-    const out: string[] = [];
+    const who = (s: number) => (s === side ? "You" : "Opponent");
+    const whose = (pid: number) => (Math.floor(pid / 16) === side ? "your" : "their");
+    const OUT = ["attacker wins", "defender holds", "both removed"];
+    const lines: string[] = [];
+    let last: { from: number; to: number } | undefined;
     for (const e of ev as any[]) {
       const a = e.args;
       switch (e.eventName) {
-        case "Moved": out.push(`${who(Number(a.side))} moved ${a.from} -> ${a.to}`); break;
-        case "Attack": out.push(`${who(Number(a.side))} attacked ${a.from} -> ${a.to}`); break;
-        case "Combat": out.push(`  ${whose(Number(a.attackerId))} ${names[a.attackerRank]} vs ${whose(Number(a.defenderId))} ${names[a.defenderRank]}: ${OUT[a.outcome]}`); break;
-        case "GameEnded": out.push(Number(a.winner) === 2 ? "game ended in a draw" : Number(a.winner) === side ? "GAME OVER: you won!" : "GAME OVER: the opponent won"); break;
-        case "LayoutVerified": out.push(Number(a.side) === side ? "you verified your army onchain" : "opponent verified their army onchain"); break;
-        case "Settled": out.push("match settled onchain"); break;
+        case "Moved": lines.push(`${who(Number(a.side))} moved ${co(a.from)} → ${co(a.to)}`); last = { from: Number(a.from), to: Number(a.to) }; break;
+        case "Attack": lines.push(`${who(Number(a.side))} attacked ${co(a.from)} → ${co(a.to)}`); last = { from: Number(a.from), to: Number(a.to) }; break;
+        case "Combat": lines[lines.length - 1] = (lines[lines.length - 1] ?? "") + `: ${whose(Number(a.attackerId))} ${names[a.attackerRank]} vs ${whose(Number(a.defenderId))} ${names[a.defenderRank]}, ${OUT[a.outcome]}`; break;
+        case "GameEnded": lines.push(Number(a.winner) === 2 ? "Game ended in a draw" : Number(a.winner) === side ? "GAME OVER: you won! 🏆" : "GAME OVER: the opponent won"); break;
+        case "LayoutVerified": lines.push(Number(a.side) === side ? "Your army was verified onchain" : "Opponent's army was verified onchain"); break;
+        case "Settled": lines.push("Match settled onchain"); break;
       }
     }
-    return out;
+    return { lines, last };
   } catch (e) { console.log("narrate failed", String(e).slice(0, 200)); return undefined; }
 }

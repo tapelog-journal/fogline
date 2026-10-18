@@ -8,7 +8,7 @@ import { legalMoves, Phase, PIECES, RANK_NAMES } from "../../agent/src/rules";
 import { combatNote, gameCall, matchIdFrom, mockUsdcAbi, narrate, pub, readState, sendTx, tokenCall, type SentTx } from "./chain";
 import { cfg, DEFAULT_TURN_TIMEOUT, txLink, watchLink, type Env } from "./env";
 import { Mutex, nonceStore } from "./store";
-import { boardView, diffEvents, sideOf, summary } from "./view";
+import { boardMd, boardView, coord, diffEvents, groupMoves, sideOf, summary, type LastMove } from "./view";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class UserError extends Error {}
@@ -165,7 +165,8 @@ export class Player extends DurableObject<Env> {
       const t = await this.tx("commitLayout", gameCall("commitLayout", [id, commitments(id, address, l)]));
       if (s.match.players.some((p) => p.toLowerCase() === this.houseAddress().toLowerCase())) await this.kickHouse(id, t.receipt.blockNumber);
       const after = await this.waitTurn(id, side, t.receipt.blockNumber, 24_000);
-      return { txs: [out(t)], ...(await this.render(after, side, l)), events: [] as string[] };
+      const lt = await this.story(id, side, t.receipt.blockNumber, after.block);
+      return { txs: [out(t)], ...(await this.render(after, side, l, lt.last ? lt : undefined)), events: lt.lines.filter((x) => !/verified/.test(x)) };
     });
   }
 
@@ -176,7 +177,7 @@ export class Player extends DurableObject<Env> {
       const side = sideOf(s, address), l = await this.layout(id);
       if (expectedPly !== undefined && side >= 0 && s.match.ply !== expectedPly) {
         // idempotency: the same move URL fetched twice must not move twice
-        return { txs: [], stale: true, events: [`not moved: you sent ply=${expectedPly} but the match is at ply ${s.match.ply} (this move may already have been made). Use the current board below.`], ...(await this.render(s, side, l)) };
+        return { txs: [], stale: true, events: [`Not moved: this link was for ply ${expectedPly} but the match is at ply ${s.match.ply} (the move was probably already made). Here is the current board.`], ...(await this.render(s, side, l, await this.sinceSeen(id, side, s.block))) };
       }
       if (side < 0) throw new UserError(`you are not a player in match #${id}`);
       if (!l) throw new UserError("you have not placed an army in this match yet (fogline_auto_army)");
@@ -191,19 +192,34 @@ export class Player extends DurableObject<Env> {
       const mv = legal.find((m) => m.from === from && m.to === to);
       if (!mv) {
         const fromHere = legal.filter((m) => m.from === from).map((m) => m.to);
-        throw new UserError(`illegal move ${from}->${to}. ${fromHere.length ? `Legal targets from ${from}: ${fromHere.join(", ")}.` : `No legal moves from ${from}.`} All legal moves: ${legal.map((m) => `${m.from}->${m.to}`).join(" ")}`);
+        throw new UserError(`illegal move ${coord(from)} → ${coord(to)}. ${fromHere.length ? `Legal targets from ${coord(from)}: ${fromHere.map(coord).join(", ")}.` : `No legal moves from ${coord(from)}.`} All legal moves: ${legal.map((m) => `${coord(m.from)}→${coord(m.to)}`).join(" ")}`);
       }
       const before = s;
       const t = await this.tx("move", gameCall("move", [id, from, to, l.ranks[mv.pieceIndex], l.salts[mv.pieceIndex]]));
       txs.push(t);
-      const moveNote = `you ${mv.attack ? "attacked" : "moved"} ${from} -> ${to} with your ${RANK_NAMES[l.ranks[mv.pieceIndex]]}`;
+      const moveNote = `You ${mv.attack ? "attacked" : "moved"} ${coord(from)} → ${coord(to)} with your ${RANK_NAMES[l.ranks[mv.pieceIndex]]}`;
       if (s.match.players.some((p) => p.toLowerCase() === this.houseAddress().toLowerCase())) await this.kickHouse(id, t.receipt.blockNumber);
       const after = await this.waitTurn(id, side, t.receipt.blockNumber, 30_000, txs, []);
-      const story = await narrate(c.rpcUrl, c.game, id, t.receipt.blockNumber, after.block, side, RANK_NAMES);
-      if (story && story.length) { events.push(moveNote, ...story.slice(1)); }
-      else { events.push(moveNote, ...diffEvents(before, after, side)); }
-      return { txs: txs.map(out), events, ...(await this.render(after, side, l)) };
+      const story = await this.story(id, side, t.receipt.blockNumber, after.block);
+      if (story.lines.length) { story.lines[0] = story.lines[0].replace(/^You (moved|attacked) [a-h][1-8] → [a-h][1-8]/, moveNote); events.push(...story.lines); }
+      else events.push(moveNote, ...diffEvents(before, after, side));
+      return { txs: txs.map(out), events, ...(await this.render(after, side, l, story)) };
     });
+  }
+
+  /** Narrate events in a block range, remember them as this match's "last turn", and remember what we've seen. */
+  private async story(id: bigint, side: number, fromBlock: bigint, toBlock: bigint): Promise<{ lines: string[]; last?: LastMove }> {
+    const c = cfg(this.env);
+    const r = (await narrate(c.rpcUrl, c.game, id, fromBlock, toBlock, side, RANK_NAMES)) ?? { lines: [] };
+    await this.ctx.storage.put(`seen:${id}`, toBlock.toString());
+    if (r.lines.length) await this.ctx.storage.put(`last:${id}`, r);
+    return r;
+  }
+  /** Events since this session last looked at the match (or the stored last turn). */
+  private async sinceSeen(id: bigint, side: number, toBlock: bigint): Promise<{ lines: string[]; last?: LastMove }> {
+    const seen = await this.ctx.storage.get<string>(`seen:${id}`);
+    if (seen && BigInt(seen) < toBlock) { const r = await this.story(id, side, BigInt(seen) + 1n, toBlock); if (r.lines.length) return r; }
+    return (await this.ctx.storage.get<{ lines: string[]; last?: LastMove }>(`last:${id}`)) ?? { lines: [] };
   }
 
   /** Wait until it's this player's turn again (auto-revealing our defenders, auto-verifying a win). */
@@ -238,12 +254,15 @@ export class Player extends DurableObject<Env> {
     try { await this.env.HOUSE.get(this.env.HOUSE.idFromName("house")).kick(id.toString(), minBlock?.toString()); } catch (e) { console.log("kick failed", String(e)); }
   }
 
-  private async render(s: Awaited<ReturnType<typeof readState>>, side: number, l?: Layout) {
+  private async render(s: Awaited<ReturnType<typeof readState>>, side: number, l?: Layout, lastTurn?: { lines: string[]; last?: LastMove }) {
     const v = boardView(s, side, l), sm = summary(s, side);
+    const legal = v.moves.map((m) => ({ from: m.from, to: m.to, fromSq: coord(m.from), toSq: coord(m.to), piece: l ? RANK_NAMES[l.ranks[m.pieceIndex]] : undefined, attack: m.attack }));
     return {
       matchId: s.id.toString(), phase: Phase[s.match.phase], ply: s.match.ply, yourTurn: s.match.phase === Phase.Playing && s.match.turn === side, yourSide: side === 0 ? "A" : side === 1 ? "B" : "spectator", status: sm.status, summary: sm.line,
-      board: v.ascii, yourPieces: v.mine, enemyPieces: v.enemy,
-      legalMoves: v.moves.map((m) => ({ from: m.from, to: m.to, piece: l ? RANK_NAMES[l.ranks[m.pieceIndex]] : undefined, attack: m.attack })),
+      board: v.ascii, boardMd: boardMd(s, side, l, lastTurn?.last), lastTurn: lastTurn?.lines ?? [],
+      yourPieces: v.mine.map((x) => ({ ...x, sq: coord(x.square) })), enemyPieces: v.enemy.map((x) => ({ ...x, sq: coord(x.square) })),
+      legalMoves: legal,
+      movesByPiece: groupMoves(legal).map((g) => ({ piece: g.piece, from: coord(g.from), to: g.tos.map((t) => coord(t.to) + (t.attack ? "⚔️" : "")) })),
       watch: watchLink(this.env, s.id),
     };
   }
@@ -256,7 +275,8 @@ export class Player extends DurableObject<Env> {
       const side = sideOf(s0, address), l = await this.layout(id);
       const s = s0, txs: SentTx[] = [], events: string[] = []; // read-only: no transactions here
       if (side >= 0 && s.match.players.some((p) => p.toLowerCase() === this.houseAddress().toLowerCase()) && s.match.phase < Phase.Settled) await this.kickHouse(id);
-      return { txs: txs.map(out), events, ...(await this.render(s, side, l)) };
+      const lt = side >= 0 ? await this.sinceSeen(id, side, s.block) : { lines: [] };
+      return { txs: txs.map(out), events, ...(await this.render(s, side, l, lt)) };
     });
   }
 
@@ -268,7 +288,21 @@ export class Player extends DurableObject<Env> {
       const t = await this.tx("resign", gameCall("resign", [id]));
       const s = await readState(c.rpcUrl, c.game, id, t.receipt.blockNumber);
       await this.kickHouse(id);
-      return { txs: [out(t)], ...(await this.render(s, sideOf(s, await this.address()), await this.layout(id))) };
+      const side = sideOf(s, await this.address());
+      return { txs: [out(t)], ...(await this.render(s, side, await this.layout(id), await this.story(id, side, t.receipt.blockNumber, s.block))) };
+    });
+  }
+
+  /** Called by the house bot when it attacked one of this player's pieces and the defender must be revealed. */
+  async autoReveal(idStr: string) {
+    return this.lock.run(async () => {
+      const c = cfg(this.env), id = BigInt(idStr), l = await this.layout(id);
+      if (!l) return { ok: false };
+      const s = await readState(c.rpcUrl, c.game, id), side = sideOf(s, await this.address());
+      if (s.match.phase !== Phase.PendingReveal || s.match.turn !== side) return { ok: false };
+      const t = await this.reveal(id, s, l);
+      await this.kickHouse(id, t.receipt.blockNumber);
+      return { ok: true, hash: t.hash };
     });
   }
 

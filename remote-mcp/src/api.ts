@@ -2,7 +2,9 @@
 // Every action accepts GET (query params) and POST (JSON body). Always HTTP 200 with ok:true/false,
 // because many agent fetch tools discard non-200 bodies. Base Sepolia testnet only.
 import { DISCLAIMER, FUNDING, watchLink, type Env } from "./env";
-import { checkChain, fmtPlay, RANK_IDX, RULES } from "./tools";
+import { checkChain, RANK_IDX, RULES } from "./tools";
+import { mdPage } from "./md";
+import { parseSquare } from "./view";
 import { Phase } from "../../agent/src/rules";
 
 const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet"] as const;
@@ -81,8 +83,8 @@ export async function handleApi(req: Request, env: Env, ip: string): Promise<Res
         return play(p, origin, session, await pl.commitArmy(matchId(), norm.map((x: string) => RANK_IDX[x])), "Custom army placed.");
       }
       case "move": {
-        const from = Number(p.from), to = Number(p.to);
-        if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from > 63 || to < 0 || to > 63) throw new Error("from and to must be squares 0..63");
+        const from = parseSquare(p.from), to = parseSquare(p.to);
+        if (Number.isNaN(from) || Number.isNaN(to)) throw new Error("from and to must be squares like b2 (a1..h8); numeric 0..63 also accepted");
         if (p.ply === undefined && req.method === "GET") throw new Error("GET moves need &ply=<current ply> (copy the move URL from the last response) so a repeated fetch can't move twice");
         const ply = p.ply === undefined ? undefined : Number(p.ply);
         return play(p, origin, session, await pl.move(matchId(), from, to, ply), "");
@@ -101,33 +103,36 @@ export async function handleApi(req: Request, env: Env, ip: string): Promise<Res
 
 function play(p: Record<string, any>, origin: string, session: string, r: any, prefix: string) {
   const base = `${origin}/api`, q = `session=${session}&match=${r.matchId}`;
-  const moveUrls = (r.legalMoves ?? []).map((m: any) => `${base}/move?${q}&from=${m.from}&to=${m.to}&ply=${r.ply}`);
-  const next: Record<string, string> = { state: `${base}/state?${q}` };
-  if (r.phase === "Committing" && !r.yourPieces?.length) next.autoArmy = `${base}/auto-army?${q}`;
-  if (r.phase === "Settled" || r.phase === "Ended") next.playAgain = `${base}/play-bot?session=${session}&ref=${Date.now().toString(36)}`;
+  const fmt = p.format === "md" || p.format === "text" ? `&format=${p.format}` : "";
+  const moveUrl = (f: string, t: string) => `${base}/move?${q}&from=${f}&to=${t}&ply=${r.ply}${fmt}`;
+  const legal = r.legalMoves ?? [];
+  const next: Record<string, string> = { state: `${base}/state?${q}${fmt}` };
+  if (r.phase === "Committing" && !r.yourPieces?.length) next.autoArmy = `${base}/auto-army?${q}${fmt}`;
+  if (r.phase === "Settled" || r.phase === "Ended") next.playAgain = `${base}/play-bot?session=${session}&ref=${Date.now().toString(36)}${fmt}`;
   const body = {
     ok: true, matchId: r.matchId, phase: r.phase, ply: r.ply, yourTurn: r.yourTurn, yourSide: r.yourSide, status: r.status, stale: !!r.stale,
-    events: r.events ?? [], board: r.board,
-    legalMoves: (r.legalMoves ?? []).map((m: any) => `${m.from}->${m.to}${m.attack ? "x" : ""}${m.piece ? ":" + m.piece : ""}`),
-    yourPieces: (r.yourPieces ?? []).map((x: any) => `${x.square}=${x.rank}`).join(" "),
-    enemyPieces: (r.enemyPieces ?? []).map((x: any) => `${x.square}=${x.rank === "hidden" ? (x.moved ? "?moved" : "?") : x.rank}`).join(" "),
-    txs: (r.txs ?? []).map((t: any) => t.url), watch: r.watch, moveUrls, next,
-    text: (prefix ? prefix + " " : "") + [...(r.events ?? []), r.summary].filter(Boolean).join(". "),
+    board_md: r.boardMd,
+    render_hint: "Render board_md as-is as a markdown table (not inside a code block). Do not reformat it.",
+    lastTurn: (r.events?.length ? r.events : r.lastTurn) ?? [],
+    legalMoves: legal.map((m: any) => `${m.piece ?? "piece"} ${m.fromSq} → ${m.toSq}${m.attack ? " ⚔️" : ""}`),
+    movesByPiece: (r.movesByPiece ?? []).map((g: any) => `${g.piece} ${g.from} → ${g.to.join(", ")}`),
+    moveUrls: legal.map((m: any) => moveUrl(m.fromSq, m.toSq)),
+    yourPieces: (r.yourPieces ?? []).map((x: any) => `${x.sq} ${x.rank}`).join(", "),
+    enemyPieces: (r.enemyPieces ?? []).map((x: any) => `${x.sq} ${x.rank === "hidden" ? (x.moved ? "hidden (has moved)" : "hidden") : x.rank}`).join(", "),
+    txs: (r.txs ?? []).map((t: any) => t.url), watch: r.watch, next,
+    text: (prefix ? prefix + " " : "") + [...((r.events?.length ? r.events : r.lastTurn) ?? []), r.summary].filter(Boolean).join(". "),
+    board_ascii: r.board,
   };
-  return reply(p, body, () => {
-    let t = (prefix ? prefix + "\n\n" : "") + fmtPlay(r);
-    if (moveUrls.length) t += `\n\nMove links (open one to make that move; ply=${r.ply}):\n` + moveUrls.join("\n");
-    t += `\n\nRefresh: ${next.state}` + (next.playAgain ? `\nPlay again: ${next.playAgain}` : "");
-    return t;
-  });
+  return reply(p, body, () => (prefix ? `**${prefix}**\n\n` : "") + mdPage({ ...r, txs: body.txs }, { move: moveUrl, refresh: next.state, extra: next.playAgain ? [["Play again", next.playAgain]] : next.autoArmy ? [["Place army", next.autoArmy]] : [] }));
 }
 
 function reply(p: Record<string, any>, body: Record<string, any>, textFn?: () => string): Response {
   const full = { ...body, disclaimer: DISCLAIMER };
-  if (String(p.format ?? "") === "text") {
-    let t = textFn ? textFn() : body.ok === false ? `Error: ${body.error}` : [body.text, body.next ? "\nNext:\n" + Object.values(body.next).join("\n") : ""].join("\n");
-    t = t.replace(/(https:\/\/[^\s]+\/api\/[a-z-]+\?[^\s]*)/g, (u) => (u.includes("format=") ? u : u + "&format=text"));
-    return new Response(`${t}\n\n${DISCLAIMER}\n`, { headers: { ...HEADERS, "content-type": "text/plain; charset=utf-8" } });
+  const f = String(p.format ?? "");
+  if (f === "text" || f === "md") {
+    let t = textFn ? textFn() : body.ok === false ? `**Error:** ${body.error}` : [body.text, body.next ? "\n" + Object.entries(body.next).map(([k, u]) => `- [${k}](${u})`).join("\n") : ""].join("\n") + `\n\n_${DISCLAIMER}_`;
+    t = t.replace(/(https:\/\/[^\s)]+\/api\/[a-z-]+\?[^\s)]*)/g, (u) => (u.includes("format=") ? u : u + `&format=${f}`));
+    return new Response(`${t}\n`, { headers: { ...HEADERS, "content-type": f === "md" ? "text/markdown; charset=utf-8" : "text/plain; charset=utf-8" } });
   }
   return new Response(JSON.stringify(full, null, 1), { headers: { ...HEADERS, "content-type": "application/json; charset=utf-8" } });
 }
