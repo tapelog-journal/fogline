@@ -2,6 +2,8 @@
 // @ts-ignore wasm module (wrangler CompiledWasm)
 import wasm from "@resvg/resvg-wasm/index_bg.wasm";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
+// @ts-ignore no types; UPNG.js (MIT) quantizes to a 256-colour palette PNG (~4x smaller, same look)
+import UPNG from "upng-js";
 // @ts-ignore binary data module (wrangler Data rule)
 import inter500 from "../assets/inter-500.ttf";
 // @ts-ignore binary data module (wrangler Data rule)
@@ -19,7 +21,11 @@ export async function svgToPng(svg: string, width?: number): Promise<Uint8Array>
   });
   try {
     const img = r.render();
-    try { return img.asPng(); } finally { img.free(); }
+    try {
+      const px = img.pixels;
+      const out = UPNG.encode([px.buffer.slice(px.byteOffset, px.byteOffset + px.byteLength)], img.width, img.height, 256);
+      return new Uint8Array(out);
+    } finally { img.free(); }
   } finally { r.free(); }
 }
 

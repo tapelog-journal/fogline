@@ -82,13 +82,14 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   server.registerTool("fogline_new_player", {
     title: "Create a Fogline player",
     description: `Use this once before playing. Creates a throwaway Base Sepolia TESTNET wallet managed by the server, funds it with a little test ETH for gas (${Number(FUNDING.grantWei) / 1e18} ETH) and 1000 fUSD test tokens, and returns a session id. Remember the session id and pass it to every other Fogline tool. Do not create a new player for every match; reuse the session.`,
-    inputSchema: { chainId: chainArg }, annotations: WR,
-  }, async ({ chainId }) => {
+    inputSchema: { chainId: chainArg, board: z.string().regex(/^[a-z0-9]{8,24}$/).optional().describe("Optional board-link name from the user's pre-typed /v/NAME/N.png links (lets ChatGPT display board pictures).") }, annotations: WR,
+  }, async ({ chainId, board }) => {
     try {
       checkChain(chainId);
       const bytes = crypto.getRandomValues(new Uint8Array(16));
       const session = "fl_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
       const r = await player(session).init(session, ip);
+      if (board) { try { await player(session).setBoardAlias(board); } catch (e: any) { r.aliasError = String(e?.message ?? e); } }
       return text(`New Fogline player created.\nsession: ${session}  (pass this to every Fogline tool)\nwallet: ${r.address} (Base Sepolia testnet, managed by the server)\n` +
         (r.funding.ok ? `funded with ${r.funding.amountEth} test ETH: ${r.funding.url}\n` : `NOT funded: ${r.funding.reason}. You can still watch and read state, but cannot send moves until funded.\n`) +
         (r.faucet ? `1000 fUSD test tokens: ${r.faucet.url}\n` : "") + `\nNext: fogline_play_bot to play the TapeLog house bot.`);

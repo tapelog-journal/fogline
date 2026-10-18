@@ -56,3 +56,7 @@ node test/e2e.mjs https://fogline-mcp.tapelog.workers.dev/sse --sse --moves 3
 node test/skill-e2e.mjs   # follows skill.md with plain GETs and plays a full match vs the bot
 # if your network intercepts *.workers.dev, pin the real IP: FOGLINE_RESOLVE_IP=<ip from DoH> node test/e2e.mjs ...
 ```
+
+### Board pictures in ChatGPT
+
+ChatGPT only displays a markdown image whose exact URL the user typed in the chat, or one OpenAI's own crawler has already seen. Picture URLs made up per turn by a server show as a broken image. The workaround is board links: `GET /chatgpt` returns a prompt with a fresh name and 40 links, `/v/NAME/1.png` … `/40.png`. The user pastes that prompt, and the agent calls `new-player?board=NAME` (or `link-board`). After that, each new board picture is bound to the next link and returned as `board_image_url`, with `board_image_user_typed: true`. Pictures are 640px palette PNGs, about 80–90 KB, and are rendered before the response returns. Other picture URLs use a path style: `/img/MATCH/PLY-PHASE/(VIEWTOKEN|spectator).png`. GET and HEAD are supported, with Content-Length, CORS `*` and no redirects.

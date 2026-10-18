@@ -11,9 +11,9 @@ import { b64, svgToPng } from "./png";
 import { sha256Hex } from "./store";
 import { GAME_DEPLOY_BLOCK, head, loadHistory, scanCreated, type History } from "./history";
 
-export interface RenderReq { scene: BoardScene; players: [string, string]; block: string }
+export interface RenderReq { scene: BoardScene; players: [string, string]; block: string; width?: number }
 const MAX_CACHED = 400;
-const RENDER_VERSION = "r2|"; // bump when the drawing changes
+const RENDER_VERSION = "r3|"; // bump when the drawing changes
 
 export class Renderer extends DurableObject<Env> {
   private looks = new Map<string, { at: number; look: Look }>();
@@ -57,11 +57,11 @@ export class Renderer extends DurableObject<Env> {
     const house = privateKeyToAccount(this.env.HOUSE_KEY as Hex).address.toLowerCase();
     sc.names = req.players.map((a) => (!a || /^0x0{40}$/i.test(a) ? "" : a.toLowerCase() === house ? "TapeLog bot" : `${a.slice(0, 6)}…${a.slice(-4)}`)) as [string, string];
     // the picture is a pure function of the scene, so cache by a hash of the scene itself
-    const hash = (await sha256Hex(RENDER_VERSION + JSON.stringify(sc))).slice(0, 32);
+    const hash = (await sha256Hex(RENDER_VERSION + (req.width ?? "") + JSON.stringify(sc))).slice(0, 32);
     const key = `png:${hash}`;
     const hit = await this.ctx.storage.get<Uint8Array>(key);
     if (hit) return { png: hit, hash, cached: true };
-    const png = await svgToPng(boardSvg(sc, { envImage: await this.envImage(tableOf(sc)) }));
+    const png = await svgToPng(boardSvg(sc, { envImage: await this.envImage(tableOf(sc)) }), req.width);
     const index = ((await this.ctx.storage.get<string[]>("index")) ?? []).filter((k) => k !== key);
     index.push(key);
     const drop = index.length > MAX_CACHED ? index.splice(0, index.length - MAX_CACHED) : [];
@@ -69,6 +69,21 @@ export class Renderer extends DurableObject<Env> {
     if (drop.length) await this.ctx.storage.delete(drop);
     return { png, hash, cached: false };
   }
+
+  /** A previously rendered picture by content hash (undefined if evicted). */
+  async cached(hash: string): Promise<Uint8Array | undefined> {
+    return /^[0-9a-f]{32}$/.test(hash) ? this.ctx.storage.get<Uint8Array>(`png:${hash}`) : undefined;
+  }
+
+  // ------------------------------------------------------------------ board-link aliases (instance "history")
+  /** First claim wins; the same player may re-claim its own alias. */
+  async claimAlias(alias: string, objectId: string): Promise<{ ok: boolean; reason?: string }> {
+    const cur = await this.ctx.storage.get<string>(`alias:${alias}`);
+    if (cur && cur !== objectId) return { ok: false, reason: "that board link name is already taken; pick another random name" };
+    await this.ctx.storage.put(`alias:${alias}`, objectId);
+    return { ok: true };
+  }
+  async aliasOwner(alias: string) { return this.ctx.storage.get<string>(`alias:${alias}`); }
 
   // ------------------------------------------------------------------ match history (instance "history")
   private hmem = new Map<string, { at: number; h: History }>();

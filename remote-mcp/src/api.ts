@@ -2,13 +2,13 @@
 // Every action accepts GET (query params) and POST (JSON body). Always HTTP 200 with ok:true/false,
 // because many agent fetch tools discard non-200 bodies. Base Sepolia testnet only.
 import { DISCLAIMER, FUNDING, renderer, watchLink, type Env } from "./env";
-import { boardImageUrl } from "./boardimg";
+import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardImageUrl } from "./boardimg";
 import { checkChain, RANK_IDX, RULES } from "./tools";
 import { mdPage } from "./md";
 import { parseSquare } from "./view";
 import { Phase } from "../../agent/src/rules";
 
-const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic"] as const;
+const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board"] as const;
 type Action = (typeof ACTIONS)[number];
 
 // Link-preview and index crawlers must never trigger actions. User-initiated agent fetchers
@@ -18,10 +18,25 @@ const READ_ONLY: Action[] = ["rules", "state", "wallet", "cosmetics"];
 
 const HEADERS = { "x-robots-tag": "noindex, nofollow, noarchive", "cache-control": "no-store, max-age=0", "access-control-allow-origin": "*" };
 
-export async function handleApi(req: Request, env: Env, ip: string, ctx?: ExecutionContext): Promise<Response> {
+export async function handleApi(req: Request, env: Env, ip: string, _ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(req.url), origin = url.origin;
   // render the board picture in the background so the image URL in the reply loads instantly
-  const warm = (r: any) => { if (r?.scene && ctx) ctx.waitUntil(renderer(env, r.matchId).png({ scene: r.scene, players: r.players, block: r.block }).catch((e: any) => console.log("prewarm failed", String(e).slice(0, 120)))); };
+  // Render the board picture before replying so the image URL loads instantly. With a board-link name
+  // (ChatGPT), bind the next pre-typed link /v/<name>/<n>.png to exactly this picture.
+  const warm = async (r: any): Promise<string | undefined> => {
+    if (!r?.scene) return undefined;
+    const job = { scene: r.scene, players: r.players, block: r.block };
+    if (r.boardAlias) {
+      try {
+        const pic = await renderer(env, r.matchId).png({ ...job, width: ALIAS_WIDTH });
+        const session = String(p.session ?? "");
+        const n = await (env.PLAYER.get(env.PLAYER.idFromName(session)) as any).recordAliasImage(r.matchId, pic.hash, ALIAS_LINKS);
+        return aliasUrl(origin, r.boardAlias, n);
+      } catch (e) { console.log("alias image failed", String(e).slice(0, 120)); }
+    }
+    try { await renderer(env, r.matchId).png(job); } catch (e) { console.log("prewarm failed", String(e).slice(0, 120)); }
+    return undefined;
+  };
   const action = url.pathname.replace(/^\/api\/?/, "").replace(/\/$/, "") as Action;
   let p: Record<string, any> = Object.fromEntries(url.searchParams);
   if (req.method === "POST") {
@@ -41,11 +56,16 @@ export async function handleApi(req: Request, env: Env, ip: string, ctx?: Execut
     if (action === "new-player") {
       const bytes = crypto.getRandomValues(new Uint8Array(16));
       const session = "fl_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-      const r = await env.PLAYER.get(env.PLAYER.idFromName(session)).init(session, ip) as any;
+      const board = p.board === undefined ? undefined : String(p.board).toLowerCase();
+      if (board !== undefined && !ALIAS_RE.test(board)) return reply(p, { ok: false, error: "board must be 8-24 lowercase letters/digits (the name in the user's /v/NAME/1.png board links)" });
+      const stub = env.PLAYER.get(env.PLAYER.idFromName(session)) as any;
+      const r = await stub.init(session, ip) as any;
+      if (board) { try { await stub.setBoardAlias(board); } catch (e: any) { r.aliasError = String(e?.message ?? e); } }
       const next = { playBot: `${origin}/api/play-bot?session=${session}`, wallet: `${origin}/api/wallet?session=${session}` };
       return reply(p, {
         ok: true, session, address: r.address, funded: r.funding.ok, fundingTx: r.funding.url, fundingNote: r.funding.ok ? `${r.funding.amountEth} test ETH for gas + 1000 fUSD test tokens` : r.funding.reason,
-        text: `New player. SESSION=${session} (keep it; pass it as ?session= on every call). ${r.funding.ok ? "Funded with test ETH and 1000 fUSD." : "NOT funded: " + r.funding.reason} Next: ${next.playBot}`,
+        boardLinks: board && !r.aliasError ? `linked: board pictures will use ${origin}/v/${board}/N.png` : r.aliasError,
+        text: `New player. SESSION=${session} (keep it; pass it as ?session= on every call). ${r.funding.ok ? "Funded with test ETH and 1000 fUSD." : "NOT funded: " + r.funding.reason}${board && !r.aliasError ? ` Board links /v/${board}/N.png are linked to this player.` : ""} Next: ${next.playBot}`,
         next,
       });
     }
@@ -58,6 +78,12 @@ export async function handleApi(req: Request, env: Env, ip: string, ctx?: Execut
     const matchId = () => { const m = Number(p.match ?? p.matchId); if (!Number.isInteger(m) || m < 1) throw new Error("missing match (match id number)"); return String(m); };
 
     switch (action) {
+      case "link-board": {
+        const board = String(p.board ?? "").toLowerCase();
+        if (!ALIAS_RE.test(board)) throw new Error("board must be 8-24 lowercase letters/digits (the name in the user's /v/NAME/1.png board links)");
+        await pl.setBoardAlias(board);
+        return reply(p, { ok: true, text: `Board links ${origin}/v/${board}/1.png … /40.png now show this player's board. Each game response's board_image_markdown uses one of them.` });
+      }
       case "cosmetics": {
         const r = await pl.cosmetics();
         const owned = new Set(r.owned);
@@ -119,10 +145,10 @@ export async function handleApi(req: Request, env: Env, ip: string, ctx?: Execut
   return reply(p, { ok: false, error: "unhandled" });
 }
 
-function play(warm: (r: any) => void, p: Record<string, any>, origin: string, session: string, r: any, prefix: string) {
+async function play(warm: (r: any) => void | Promise<string | undefined>, p: Record<string, any>, origin: string, session: string, r: any, prefix: string) {
   const base = `${origin}/api`, q = `session=${session}&match=${r.matchId}`;
-  warm(r);
-  const img = boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
+  const aliased = await warm(r);
+  const img = aliased ?? boardImageUrl(origin, r.matchId, r.ply, r.phase, r.viewToken);
   const fmt = p.format === "md" || p.format === "text" ? `&format=${p.format}` : "";
   const moveUrl = (f: string, t: string) => `${base}/move?${q}&from=${f}&to=${t}&ply=${r.ply}${fmt}`;
   const legal = r.legalMoves ?? [];
@@ -133,7 +159,10 @@ function play(warm: (r: any) => void, p: Record<string, any>, origin: string, se
     ok: true, matchId: r.matchId, phase: r.phase, ply: r.ply, yourTurn: r.yourTurn, yourSide: r.yourSide, status: r.status, stale: !!r.stale,
     board_image_url: img,
     board_image_markdown: `![Fogline board, match #${r.matchId}, ply ${r.ply}](${img})`,
-    render_hint: "Show the board picture: put board_image_markdown on its own line in your reply (a markdown image, not inside a code block). Only if images cannot be shown, render board_md as-is as a markdown table.",
+    board_image_user_typed: !!aliased,
+    render_hint: aliased
+      ? "Show the board picture: put board_image_markdown on its own line in your reply (a markdown image, not inside a code block). It is one of the board links the user typed, so ChatGPT can display it."
+      : "Show the board picture: put board_image_markdown on its own line (not in a code block). ChatGPT: a picture URL the user did not type shows as a broken image, so in ChatGPT render board_md as-is as a markdown table instead and add a plain link [Open board picture](board_image_url).",
     board_md: r.boardMd,
     lastTurn: (r.events?.length ? r.events : r.lastTurn) ?? [],
     legalMoves: legal.map((m: any) => `${m.piece ?? "piece"} ${m.fromSq} → ${m.toSq}${m.attack ? " ⚔️" : ""}`),
@@ -172,6 +201,8 @@ Allow: /
 User-agent: *
 Allow: /skill.md
 Allow: /llms.txt
+Allow: /img/
+Allow: /v/
 Disallow: /api/
 `;
 

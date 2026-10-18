@@ -265,6 +265,7 @@ export class Player extends DurableObject<Env> {
     return {
       scene, players: [s.match.players[0], s.match.players[1]] as [string, string], block: s.block?.toString() ?? "0",
       viewToken: side >= 0 ? await viewToken(this.env, this.ctx.id.toString(), s.id.toString()) : undefined,
+      boardAlias: side >= 0 ? await this.ctx.storage.get<string>("alias") : undefined,
       matchId: s.id.toString(), phase: Phase[s.match.phase], ply: s.match.ply, yourTurn: s.match.phase === Phase.Playing && s.match.turn === side, yourSide: side === 0 ? "A" : side === 1 ? "B" : "spectator", status: sm.status, summary: sm.line,
       board: v.ascii, boardMd: boardMd(s, side, l, lastTurn?.last), lastTurn: lastTurn?.lines ?? [],
       yourPieces: v.mine.map((x) => ({ ...x, sq: coord(x.square) })), enemyPieces: v.enemy.map((x) => ({ ...x, sq: coord(x.square) })),
@@ -302,13 +303,38 @@ export class Player extends DurableObject<Env> {
 
   // ------------------------------------------------------------------ board picture + cosmetics
 
+  /** Bind a user-chosen board-link name (lets ChatGPT show pictures whose URLs the user typed). */
+  async setBoardAlias(alias: string) {
+    await this.key();
+    const r = await this.env.RENDER.get(this.env.RENDER.idFromName("history")).claimAlias(alias, this.ctx.id.toString());
+    if (!r.ok) throw new UserError(r.reason!);
+    await this.ctx.storage.put("alias", alias);
+    return { alias };
+  }
+  async boardAlias() { return this.ctx.storage.get<string>("alias"); }
+  /** Bind a picture to a board link: the same picture keeps its link; a new picture takes the next link (1..links, wrapping). */
+  async recordAliasImage(matchId: string, hash: string, links: number): Promise<number> {
+    const last = await this.ctx.storage.get<{ n: number; hash: string }>("vimg:last");
+    if (last?.hash === hash) return last.n;
+    const n = last ? (last.n % links) + 1 : 1;
+    await this.ctx.storage.put({ [`vimg:${n}`]: { matchId, hash }, "vimg:last": { n, hash } });
+    return n;
+  }
+  async aliasImage(n: number) { return this.ctx.storage.get<{ matchId: string; hash: string }>(`vimg:${n}`); }
+  /** Picture of the latest match this player is in (fallback for a board link that was not issued yet). */
+  async latestBoardPng(width?: number) {
+    const ms = (await this.ctx.storage.get<string[]>("matches")) ?? [];
+    if (!ms.length) throw new UserError("no match yet");
+    return this.boardPng(ms[ms.length - 1], width);
+  }
+
   /** PNG of this player's own view of a match (own ranks visible, enemy hidden unless revealed onchain). */
-  async boardPng(idStr: string) {
+  async boardPng(idStr: string, width?: number) {
     const c = cfg(this.env), id = BigInt(idStr);
     const s = await readState(c.rpcUrl, c.game, id);
     const side = sideOf(s, await this.address());
     const scene = sceneFrom(s, side, side >= 0 ? await this.layout(id) : undefined, DEFAULT_LOOK_PAIR());
-    return renderer(this.env, idStr).png({ scene, players: [s.match.players[0], s.match.players[1]], block: s.block.toString() });
+    return renderer(this.env, idStr).png({ scene, players: [s.match.players[0], s.match.players[1]], block: s.block.toString(), width });
   }
 
   async cosmetics() {

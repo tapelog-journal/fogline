@@ -6,7 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { buildServer, houseAddress, VERSION } from "./tools";
 import { cfg, DISCLAIMER, FUNDING, MAX_HOUSE_MATCHES, type Env } from "./env";
 import { handleApi, ROBOTS } from "./api";
-import { handleBoardImage } from "./boardimg";
+import { chatgptPrompt, handleAliasImage, handleBoardImage } from "./boardimg";
 // @ts-ignore text module (wrangler rule)
 import SKILL from "../skill.md";
 // @ts-ignore text module (wrangler rule)
@@ -35,6 +35,10 @@ export default {
 
     const pic = url.pathname.match(/^\/api\/match\/(\d{1,9})\/board\.png$/);
     if (pic) return handleBoardImage(req, env, pic[1]);
+    const img = url.pathname.match(/^\/img\/(\d{1,9})\/[0-9a-z-]{1,16}\/([0-9a-f]{64}\.[0-9a-f]{24}|spectator)\.png$/);
+    if (img) return handleBoardImage(req, env, img[1], img[2] === "spectator" ? "" : img[2]);
+    const al = url.pathname.match(/^\/v\/([a-z0-9]{8,24})\/(\d{1,3})\.png$/);
+    if (al) return handleAliasImage(req, env, al[1], Number(al[2]));
     const hist = url.pathname.match(/^\/api\/match\/(\d{1,9})\/history$/);
     if (hist) {
       const H = { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=3" };
@@ -44,6 +48,7 @@ export default {
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return handleApi(req, env, ip, ctx);
     if (url.pathname === "/skill.md" || url.pathname === "/SKILL.md") return new Response(SKILL as string, { headers: { "content-type": "text/markdown; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
     if (url.pathname === "/llms.txt") return new Response(LLMS as string, { headers: { "content-type": "text/plain; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
+    if (url.pathname === "/chatgpt" || url.pathname === "/chatgpt.txt") return new Response(chatgptPrompt(url.origin, url.searchParams.get("name") ?? undefined), { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*" } });
     if (url.pathname === "/robots.txt") return new Response(ROBOTS, { headers: { "content-type": "text/plain; charset=utf-8" } });
 
     if (url.pathname === "/mcp" || url.pathname === "/mcp/") {
