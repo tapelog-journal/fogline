@@ -158,10 +158,11 @@ function playStepFx(snap, prevSnap) {
 }
 
 // ---------------- replay
-async function loadReplay(url) {
-  replay = await (await fetch(url)).json();
+async function loadReplay(src, keepPos = false) {
+  const atEnd = !replay || idx >= replay.snapshots.length - 1;
+  replay = typeof src === "string" ? await (await fetch(src)).json() : src;
   const s = $("slider"); s.max = replay.snapshots.length - 1;
-  idx = q.get("step") ? Math.min(+q.get("step"), +s.max) : +s.max; s.value = idx;
+  idx = keepPos && !atEnd ? Math.min(idx, +s.max) : q.get("step") && !keepPos ? Math.min(+q.get("step"), +s.max) : +s.max; s.value = idx;
   $("log").textContent = replay.snapshots.map((x) => `[${x.step}] ${x.log.replace(/side 0/g, "A").replace(/side 1/g, "B")}`).join("\n");
   show(idx, false);
 }
@@ -261,7 +262,8 @@ $("connect").onclick = async () => {
 
 // ---------------- live
 let timer;
-$("loadLive").onclick = async () => {
+async function liveBoard() {
+  clearInterval(histTimer);
   const { createPublicClient, http, parseAbi } = await import("https://esm.sh/viem@2");
   const abi = parseAbi([
     "function getBoard(uint256) view returns (uint8[64])",
@@ -275,7 +277,8 @@ $("loadLive").onclick = async () => {
     draw({ board, pieces, match }); $("steplog").textContent = "live";
   };
   clearInterval(timer); await tick(); timer = setInterval(tick, 4000);
-};
+}
+$("loadLive").onclick = () => ($("game").value.trim().toLowerCase() === OUR_GAME.toLowerCase() ? watchMatch($("mid").value.trim()) : liveBoard());
 
 // integer cell size from the space the stage gives the board (and the viewport height on desktop)
 function sizeBoard() {
@@ -289,7 +292,31 @@ function sizeBoard() {
 new ResizeObserver(sizeBoard).observe($("stage")); addEventListener("resize", sizeBoard); sizeBoard();
 applyTable(); renderPicker(); renderLegend();
 if (q.get("tab")) { tab = q.get("tab"); renderPicker(); }
-if (q.get("game")) { $("game").value = q.get("game"); if (q.get("rpc")) $("rpc").value = q.get("rpc"); if (q.get("match")) $("mid").value = q.get("match"); $("loadLive").click(); }
+// Onchain match: load the full move history (rebuilt from events by the Fogline API, which handles public-RPC
+// log limits), then keep it fresh while the match is running. Falls back to live board polling.
+const API = q.get("api") || "https://fogline-mcp.tapelog.workers.dev";
+const OUR_GAME = "0x059db9310c1DFB3009DAd13d043589DDBe75C874";
+let histTimer;
+async function loadHistory(id) {
+  const r = await fetch(`${API}/api/match/${id}/history`, { cache: "no-store" });
+  const h = await r.json();
+  if (!h.snapshots?.length) throw new Error(h.error || "no history");
+  const grew = !replay || replay.matchId !== h.matchId || h.snapshots.length !== replay.snapshots.length;
+  if (grew) await loadReplay(h, replay?.matchId === h.matchId);
+  return h;
+}
+async function watchMatch(id) {
+  clearInterval(timer); clearInterval(histTimer);
+  try {
+    const h = await loadHistory(id);
+    if (!h.done) histTimer = setInterval(async () => { try { const n = await loadHistory(id); if (n.done) clearInterval(histTimer); } catch {} }, 5000);
+  } catch (e) { console.warn("history unavailable, showing the live board only:", e.message); liveBoard(); }
+}
+if (q.get("game")) {
+  $("game").value = q.get("game"); if (q.get("rpc")) $("rpc").value = q.get("rpc"); if (q.get("match")) $("mid").value = q.get("match");
+  if (q.get("game").toLowerCase() === OUR_GAME.toLowerCase() && q.get("match")) await watchMatch(q.get("match"));
+  else liveBoard();
+}
 else await loadReplay(q.get("replay") || "replays/base-sepolia-match-1.json");
 if (q.get("owner")) { $("owner").value = q.get("owner"); checkOwner(q.get("owner")); }
 window.__fogline = { A, look, show, demoEffect, demoTrail, refresh };

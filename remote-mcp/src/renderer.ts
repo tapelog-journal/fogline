@@ -9,6 +9,7 @@ import { cfg, type Env } from "./env";
 import { boardSvg, envSvg, tableOf, type BoardScene, type Look } from "./render";
 import { b64, svgToPng } from "./png";
 import { sha256Hex } from "./store";
+import { GAME_DEPLOY_BLOCK, head, loadHistory, scanCreated, type History } from "./history";
 
 export interface RenderReq { scene: BoardScene; players: [string, string]; block: string }
 const MAX_CACHED = 400;
@@ -67,5 +68,34 @@ export class Renderer extends DurableObject<Env> {
     await this.ctx.storage.put({ [key]: png, index });
     if (drop.length) await this.ctx.storage.delete(drop);
     return { png, hash, cached: false };
+  }
+
+  // ------------------------------------------------------------------ match history (instance "history")
+  private hmem = new Map<string, { at: number; h: History }>();
+
+  async history(idStr: string): Promise<History> {
+    const c = cfg(this.env), id = BigInt(idStr);
+    const done = await this.ctx.storage.get<History>(`hist:${idStr}`);
+    if (done) return done;
+    const m = this.hmem.get(idStr);
+    if (m && Date.now() - m.at < 4000) return m.h;
+    let created = await this.ctx.storage.get<string>(`created:${idStr}`);
+    if (!created) {
+      const scanned = BigInt((await this.ctx.storage.get<string>("scanned")) ?? String(GAME_DEPLOY_BLOCK - 1n));
+      const to = await head();
+      if (scanned < to) {
+        const found = await scanCreated(c.game, scanned + 1n, to);
+        const puts: Record<string, string> = { scanned: to.toString() };
+        for (const [k, v] of Object.entries(found)) puts[`created:${k}`] = v;
+        const entries = Object.entries(puts);
+        for (let i = 0; i < entries.length; i += 100) await this.ctx.storage.put(Object.fromEntries(entries.slice(i, i + 100)));
+        created = found[idStr];
+      }
+    }
+    if (!created) throw new Error(`match #${idStr} not found`);
+    const h = await loadHistory(c.rpcUrl, c.game, id, BigInt(created));
+    if (h.done) await this.ctx.storage.put(`hist:${idStr}`, h);
+    this.hmem.set(idStr, { at: Date.now(), h });
+    return h;
   }
 }
