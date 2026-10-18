@@ -18,7 +18,7 @@ iframe{width:100%;border:0;display:block;height:980px;border-radius:14px}
 </div>
 <script>
 const q = new URLSearchParams(location.search), MODE = q.get("mode") || "bridge";
-const log = (...a) => { const el = document.getElementById("log"); el.textContent += a.map((x) => typeof x === "string" ? x : JSON.stringify(x).slice(0, 300)).join(" ") + "\n"; el.scrollTop = 1e9; };
+const log = (...a) => { const el = document.getElementById("log"); el.textContent += a.map((x) => typeof x === "string" ? x : String(JSON.stringify(x)).slice(0, 300)).join(" ") + "\n"; el.scrollTop = 1e9; };
 let rid = 1;
 async function mcp(method, params) {
   const r = await fetch("/mcp-proxy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: rid++, method, params }) });
@@ -49,6 +49,7 @@ window.__harness = { calls: [], modelContext: [] };
     const frame = document.getElementById("w");
     if (MODE === "openai") {
       toolResult = await mcp("tools/call", { name: tool, arguments: args });
+      window.__harness.firstResult = { sc: toolResult.structuredContent, metaKeys: Object.keys(toolResult._meta || {}) };
       const shim = `<script>window.openai={toolInput:${JSON.stringify(args)},toolOutput:${JSON.stringify(toolResult.structuredContent)},toolResponseMetadata:${JSON.stringify(toolResult._meta||{})},widgetState:null,setWidgetState(s){parent.postMessage({__oa:"state",s},"*")},openExternal(o){parent.postMessage({__oa:"open",o},"*")},callTool(name,args){return new Promise((ok,ko)=>{const id=Math.random();addEventListener("message",function h(e){if(e.data&&e.data.__oaRes===id){removeEventListener("message",h);e.data.err?ko(new Error(e.data.err)):ok(e.data.res)}});parent.postMessage({__oa:"call",id,name,args},"*")})}};<\/script>`;
       html = shim + html;
     }
