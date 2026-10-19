@@ -11,7 +11,7 @@ import { mdPage } from "./md";
 import { boardImageUrl, boardPageUrl } from "./boardimg";
 import { checkName } from "./api";
 import { ladder, tourney } from "./env";
-import { publicView } from "./tourney";
+import { publicView, scheduleView } from "./tourney";
 import { renderer } from "./env";
 import { b64 } from "./png";
 import { ITEMS } from "./cosmetics";
@@ -221,31 +221,33 @@ export function buildServer(env: Env, ip: string, origin = PUBLIC_ORIGIN) {
   });
 
   server.registerTool("fogline_tournament", {
-    title: "Show the Fogline weekly tournament",
-    description: "Use this when the user asks about tournaments, brackets or the weekly cup. Shows this week's single-elimination tournament (sign-up status, start time, bracket, results) and, with a session, the player's own current tournament match. Prizes are decorative cosmetics and valueless test fUSD only.",
+    title: "Show Fogline tournaments (cups every 4 hours)",
+    description: "Use this when the user asks about tournaments, cups, brackets or the Sunday Major. Shows the next Fogline Cup (every 4 hours, 8 players), what is running now with its live bracket, the Sunday Major, and recent results with win-clip links; with a session, the player's own current tournament match. Prizes are decorative cosmetics and valueless test fUSD only.",
     inputSchema: { session: sessionArg.optional() }, annotations: RO,
   }, async ({ session }) => {
     try {
       const you = session ? (await player(session).profile()).address : undefined;
       const o = await (tourney(env) as any).overview();
       const v = publicView(o.tournament, env, you);
+      const sv = scheduleView(o, env, you);
+      const nx = sv.next, head = `${sv.schedule}\nNext: ${nx?.name} at ${nx?.startsAt} (${nx?.signedUp}/${nx?.maxPlayers} signed up; fogline_tournament_signup joins it)${sv.major ? `\nSunday Major: ${sv.major.name} at ${sv.major.startsAt}` : ""}${sv.recent.length ? `\nRecent: ${sv.recent.slice(0, 5).map((r: any) => `${r.name}: ${r.champion ?? "?"}${r.clip ? ` (clip ${r.clip})` : ""}`).join("; ")}` : ""}\n\n`;
       const lines = v.rounds.map((r: any) => `${r.name}: ` + r.matches.map((m: any) => `${m.a ?? "bye"} vs ${m.b ?? "bye"}${m.winner ? ` → ${m.winner}` : m.matchId ? ` (match #${m.matchId})` : ""}`).join("; "));
-      return { ...text(`${v.name} · ${v.status} · starts ${v.startsAt} (UTC) · ${v.signedUp}/${v.maxPlayers} signed up · ${Math.round(v.turnTimeoutSeconds / 60)} min per turn\nPrizes: ${v.prizes.map((x: any) => `#${x.place} ${x.cosmetic} + ${x.testFusd} test fUSD`).join(", ")} (test tokens and cosmetics only)\n${lines.join("\n")}${v.you ? `\nYou: ${v.you.match ? `play match #${v.you.match.matchId} (${v.you.match.a} vs ${v.you.match.b}); use fogline_auto_army / fogline_move with that matchId` : v.you.signedUp ? "signed up" : "not signed up (fogline_tournament_signup)"}` : ""}\nBracket: https://tapelog-journal.github.io/fogline/tournament.html`), structuredContent: v };
+      return { ...text(`${head}${v.name} · ${v.status} · starts ${v.startsAt} (UTC) · ${v.signedUp}/${v.maxPlayers} signed up · ${Math.round(v.turnTimeoutSeconds / 60)} min per turn\nPrizes: ${v.prizes.map((x: any) => `#${x.place} ${x.cosmetic ? x.cosmetic + " + " : ""}${x.testFusd} test fUSD`).join(", ")} (test tokens and cosmetics only)\n${lines.join("\n")}${v.you ? `\nYou: ${v.you.match ? `play match #${v.you.match.matchId} (${v.you.match.a} vs ${v.you.match.b}); use fogline_auto_army / fogline_move with that matchId` : v.you.signedUp ? "signed up" : "not signed up (fogline_tournament_signup)"}` : ""}\nBracket: https://tapelog-journal.github.io/fogline/tournament.html`), structuredContent: { ...sv, tournament: v } };
     } catch (e) { return err(e); }
   });
 
   server.registerTool("fogline_tournament_signup", {
-    title: "Sign up for the Fogline weekly tournament",
-    description: "Use this when the user wants to enter this week's tournament. Signs the player up (optional public handle). When the bracket starts the server creates the player's match; find it with fogline_tournament, then place the army and move as usual. Free; prizes are cosmetics and test fUSD only.",
-    inputSchema: { session: sessionArg, name: z.string().max(24).optional().describe("Optional public handle the user chose (2-24 letters, digits, spaces, _ . -).") },
+    title: "Join the next Fogline Cup (or the Sunday Major)",
+    description: "Use this when the user wants to enter a tournament. One call joins the next Fogline Cup (every 4 hours, 8 players, sign-ups close 5 minutes before the start); event \"major\" joins the Sunday Major instead. Only call it if the user asked to enter and will play when it starts (60-second turn timers). When the bracket starts the server creates the player's match; find it with fogline_tournament, then place the army and move as usual. Free; prizes are cosmetics and test fUSD only.",
+    inputSchema: { session: sessionArg, name: z.string().max(24).optional().describe("Optional public handle the user chose (2-24 letters, digits, spaces, _ . -)."), event: z.enum(["next", "major"]).optional().describe("next = the next 4-hourly cup (default); major = the Sunday Major") },
     annotations: WR,
-  }, async ({ session, name }) => {
+  }, async ({ session, name, event }) => {
     try {
       const pl = player(session);
       await pl.setProfile(name === undefined ? undefined : checkName(name), "mcp");
-      const r = await (tourney(env) as any).signup(await pl.tourneyIdentity());
+      const r = await (tourney(env) as any).signup(await pl.tourneyIdentity(), event ?? "next");
       const v = publicView(r.tournament, env);
-      return text(`${r.already ? "Already signed up for" : "Signed up for"} ${v.name}, starting ${v.startsAt} (UTC). ${v.signedUp} player(s) so far; TapeLog bots fill the bracket. Check fogline_tournament for your match once it starts.`);
+      return text(`${r.already ? "Already signed up for" : "Signed up for"} ${v.name}, starting ${v.startsAt} (UTC; sign-ups close 5 minutes before). ${v.signedUp} player(s) so far; TapeLog bots fill the bracket. ${v.turnTimeoutSeconds}-second turns. Check fogline_tournament for your match once it starts.`);
     } catch (e) { return err(e); }
   });
 

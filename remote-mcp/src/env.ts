@@ -52,6 +52,11 @@ export const FUNDING = {
   funderFloorWei: 1_000_000_000_000_000n, // stop granting players when funder < 0.001 ETH (reserved for the house bot)
   houseMinWei: 300_000_000_000_000n, // top up house bot when below 0.0003 ETH
   houseTopUpWei: 1_000_000_000_000_000n, // with 0.001 ETH
+  // exhibition bot personas (bot-vs-bot cups): small top-ups, a daily cap, and a floor that protects player grants + the house
+  botMinWei: 40_000_000_000_000n, // top up a persona below 0.00004 ETH
+  botTopUpWei: 80_000_000_000_000n, // with 0.00008 ETH (~3 exhibition games)
+  maxBotTopUpsPerDay: 24,
+  exhibitionFloorWei: 3_000_000_000_000_000n, // no exhibition gas when the funder is below 0.003 ETH
 };
 
 export const MAX_HOUSE_MATCHES = 12;

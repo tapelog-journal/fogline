@@ -2,7 +2,7 @@
 // Every action accepts GET (query params) and POST (JSON body). Always HTTP 200 with ok:true/false,
 // because many agent fetch tools discard non-200 bodies. Base Sepolia testnet only.
 import { DISCLAIMER, FUNDING, ladder, renderer, tourney, watchLink, type Env } from "./env";
-import { publicView } from "./tourney";
+import { publicView, scheduleView } from "./tourney";
 import { ALIAS_LINKS, ALIAS_RE, ALIAS_WIDTH, aliasUrl, boardImageUrl, boardPageUrl } from "./boardimg";
 import { checkChain, RANK_IDX, RULES } from "./tools";
 import { mdPage } from "./md";
@@ -11,7 +11,7 @@ import { RANK_NAMES } from "../../agent/src/rules";
 import { Phase } from "../../agent/src/rules";
 import { LEVEL_LABEL, parseLevel } from "../../agent/src/levels";
 
-const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board", "ladder", "set-name", "equip-cosmetic", "tournament", "tournament-signup", "tournament-withdraw"] as const;
+const ACTIONS = ["rules", "new-player", "play-bot", "create", "join", "auto-army", "set-army", "move", "state", "resign", "wallet", "cosmetics", "buy-cosmetic", "link-board", "ladder", "set-name", "equip-cosmetic", "tournament", "tournament-signup", "tournament-withdraw", "join-cup"] as const;
 type Action = (typeof ACTIONS)[number];
 
 // Link-preview and index crawlers must never trigger actions. User-initiated agent fetchers
@@ -118,14 +118,16 @@ export async function handleApi(req: Request, env: Env, ip: string, _ctx?: Execu
         return reply(p, { ok: true, item: r.item.name, alreadyOwned: r.alreadyOwned, equipped: r.equipped, txs: r.txs.map((t: any) => t.url),
           text: `${r.alreadyOwned ? "Already owned" : "Bought"} ${r.item.name} with test fUSD${r.equipped ? " and equipped it" : ""}. It now shows in your board pictures. Decorative only.`, next: { cosmetics: `${origin}/api/cosmetics?session=${session}` } });
       }
+      case "join-cup":
       case "tournament-signup": {
+        if (action === "join-cup" && !p.id) p.id = "next";
         if (p.name !== undefined) await pl.setProfile(checkName(p.name), p.client === undefined ? undefined : clientTag(p.client));
         else if (p.client !== undefined) await pl.setProfile(undefined, clientTag(p.client));
         const who = await pl.tourneyIdentity();
         const r = await (tourney(env) as any).signup(who, p.id ? String(p.id) : undefined);
         const v = publicView(r.tournament, env, who.address);
-        return reply(p, { ok: true, already: r.already, tournament: v.name, id: v.id, startsAt: v.startsAt, signedUp: v.signedUp,
-          text: `${r.already ? "You were already signed up for" : "Signed up for"} ${v.name}. It starts ${v.startsAt} (UTC); ${v.signedUp} player(s) so far, TapeLog bots fill the bracket. Single elimination, ${Math.round(v.turnTimeoutSeconds / 60)} min per turn. When your match is created it shows up in ${origin}/api/tournament?session=${session} (and on the Play page); place your army and move as usual. Prizes are a cosmetic banner and test fUSD only.`,
+        return reply(p, { ok: true, already: r.already, tournament: v.name, id: v.id, startsAt: v.startsAt, signupClosesAt: v.signupClosesAt, signedUp: v.signedUp,
+          text: `${r.already ? "You were already signed up for" : "Signed up for"} ${v.name}. It starts ${v.startsAt} (UTC; sign-ups close 5 minutes before); ${v.signedUp} player(s) so far, TapeLog bots fill the bracket. Single elimination, ${v.turnTimeoutSeconds} s per turn, rounds capped at ${v.roundCapMinutes} min. When your match is created it shows up in ${origin}/api/tournament?session=${session} (and on the Play page); place your army and move as usual. Prizes are a cosmetic banner and test fUSD only.`,
           next: { tournament: `${origin}/api/tournament?session=${session}`, page: "https://tapelog-journal.github.io/fogline/tournament.html" } });
       }
       case "tournament-withdraw": {
@@ -254,10 +256,13 @@ function tournamentReply(p: Record<string, any>, env: Env, origin: string, o: an
   const v = publicView(o.tournament, env, you);
   const when = new Date(v.startsAtMs).toUTCString().replace(":00 GMT", " UTC");
   const yourLine = v.you ? (v.you.match ? ` Your current match: #${v.you.match.matchId ?? "(being created)"} ${v.you.match.a} vs ${v.you.match.b} (${v.you.match.status}).` : v.you.signedUp ? (v.status === "signup" ? " You are signed up." : v.you.eliminated ? " You are out." : "") : " You are not signed up.") : "";
-  const text = v.status === "signup" ? `${v.name}: sign-ups open, starts ${when}. ${v.signedUp}/${v.maxPlayers} signed up. Single elimination vs agents, humans and TapeLog bots; prizes: ${v.prizes.map((x: any) => `#${x.place} ${x.cosmetic} + ${x.testFusd} test fUSD`).join(", ")}. Sign up: ${origin}/api/tournament-signup?session=SESSION${yourLine}`
+  const nx = o.next ? publicView(o.next, env, you) : undefined;
+  const lead = nx && nx.id !== v.id ? `Next: ${nx.name} at ${new Date(nx.startsAtMs).toUTCString().replace(":00 GMT", " UTC")} (${nx.signedUp}/${nx.maxPlayers}; join in one call: ${origin}/api/join-cup?session=SESSION). ` : "";
+  const text = lead + (v.status === "signup" ? `${v.name}: sign-ups open, starts ${when}. ${v.signedUp}/${v.maxPlayers} signed up. Single elimination vs agents, humans and TapeLog bots; prizes: ${v.prizes.map((x: any) => `#${x.place} ${x.cosmetic ? x.cosmetic + " + " : ""}${x.testFusd} test fUSD`).join(", ")}. Sign up: ${origin}/api/join-cup?session=SESSION${yourLine}`
     : v.status === "running" ? `${v.name} is running: ${v.rounds.map((r: any) => `${r.name}: ${r.matches.map((m: any) => `${m.a ?? "bye"} vs ${m.b ?? "bye"}${m.winner ? ` → ${m.winner}` : m.matchId ? ` (#${m.matchId})` : ""}`).join("; ")}`).join(" | ")}.${yourLine}`
-    : v.status === "done" ? `${v.name} finished. Champion: ${v.champion}; runner-up: ${v.runnerUp}.${yourLine}` : `${v.name}: ${v.status}${v.note ? ` (${v.note})` : ""}.`;
-  return reply(p, { ok: true, tournament: v, list: o.list, page: "https://tapelog-journal.github.io/fogline/tournament.html", text }, () => `### ${v.name}\n\n${text}\n\n` + v.rounds.map((r: any) => `**${r.name}**\n` + r.matches.map((m: any) => `- ${m.a ?? "bye"} vs ${m.b ?? "bye"}: ${m.winner ? `**${m.winner}** advances` : m.matchId ? `[match #${m.matchId}](${m.watch})` : m.status}${m.note ? ` (${m.note})` : ""}`).join("\n")).join("\n\n") + `\n\n[Bracket page](https://tapelog-journal.github.io/fogline/tournament.html)\n\n_Prizes are valueless test tokens and decorative cosmetics only. ${DISCLAIMER}_`);
+    : v.status === "done" ? `${v.name} finished. Champion: ${v.champion}; runner-up: ${v.runnerUp}.${yourLine}` : `${v.name}: ${v.status}${v.note ? ` (${v.note})` : ""}.`) + (v.finalClip ? ` Final clip: ${v.finalClip}` : "");
+  const sv = scheduleView(o, env, you);
+  return reply(p, { ok: true, ...sv, tournament: v, list: o.list, page: "https://tapelog-journal.github.io/fogline/tournament.html", text }, () => `### ${v.name}\n\n${text}\n\n` + v.rounds.map((r: any) => `**${r.name}**\n` + r.matches.map((m: any) => `- ${m.a ?? "bye"} vs ${m.b ?? "bye"}: ${m.winner ? `**${m.winner}** advances` : m.matchId ? `[match #${m.matchId}](${m.watch})` : m.status}${m.note ? ` (${m.note})` : ""}`).join("\n")).join("\n\n") + `\n\n[Bracket page](https://tapelog-journal.github.io/fogline/tournament.html)\n\n_Prizes are valueless test tokens and decorative cosmetics only. ${DISCLAIMER}_`);
 }
 
 /** Client kind as reported by the client itself (no tracking): browser Play page, MCP, skill.md agent, or plain API. */

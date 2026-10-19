@@ -3,13 +3,17 @@
 // Game for entertainment. Testnet only.
 
 export type BotLevel = "easy" | "normal" | "hard";
-export interface Entrant { address: string; objectId?: string; name?: string; client: string; rating: number; bot?: BotLevel; joinedAt: number }
+export interface Entrant { address: string; objectId?: string; name?: string; client: string; rating: number; bot?: BotLevel; persona?: string; joinedAt: number }
 export interface Pairing { a: number | null; b: number | null; matchId?: string; winner?: number; status: "waiting" | "playing" | "done"; note?: string; startedAt?: number; error?: string }
 export interface Prize { place: 1 | 2; item: number; itemName: string; fusd: number }
 export interface Tourney {
-  id: string; name: string; kind: "weekly" | "practice";
+  id: string; name: string; kind: "weekly" | "practice" | "cup" | "major";
+  /** sign-ups close this long before the start (ms) */ signupCloseMs?: number;
+  /** exhibition: nobody signed up, so TapeLog bot personas play it out onchain (not rated, no prizes) */ exhibition?: boolean;
+  /** exhibition games stop at this many plies; the side with fewer pieces resigns */ maxPlies?: number;
   signupOpens: number; startsAt: number; turnTimeout: number; roundCapMs: number; maxHumans: number; fillBots: boolean;
-  status: "signup" | "running" | "done" | "cancelled";
+  status: "signup" | "running" | "done" | "cancelled" | "skipped";
+  finalMatchId?: string;
   entrants: Entrant[]; rounds: Pairing[][]; prizes: Prize[];
   champion?: number; runnerUp?: number; prizeTxs?: { place: number; to: string; txs: string[]; error?: string }[];
   createdAt: number; endedAt?: number; note?: string;
@@ -19,6 +23,49 @@ export const PRIZES: Prize[] = [
   { place: 1, item: 21, itemName: "Gilded Victory Banner", fusd: 250 },
   { place: 2, item: 22, itemName: "Tape Victory Banner", fusd: 100 },
 ];
+export const CUP_PRIZES: Prize[] = [
+  { place: 1, item: 22, itemName: "Tape Victory Banner", fusd: 100 },
+  { place: 2, item: 0, itemName: "", fusd: 50 },
+];
+// ---- frequent cups: every 4 hours, UTC-aligned (00, 04, 08, 12, 16, 20 UTC)
+export const CUP_EVERY_H = 4;
+export const CUP_SIZE = 8;
+export const CUP_SIGNUP_CLOSE_MS = 5 * 60_000;
+export const CUP_TURN_S = 60; // contract minimum
+export const CUP_ROUND_CAP_MS = 15 * 60_000; // 3 rounds -> about 50 minutes at most
+export const MAJOR_TURN_S = 120;
+export const MAJOR_ROUND_CAP_MS = 25 * 60_000;
+/** Bot-only exhibitions run in these UTC hours only (testnet gas budget); other empty cups are skipped quietly. */
+export const EXHIBITION_HOURS = [0, 12];
+export const EXHIBITION_MAX_PLIES = 100;
+
+/** Next cup start: the next 4-hour UTC boundary whose sign-up is still open (closes 5 minutes before). */
+export function cupStart(now: number): number {
+  const step = CUP_EVERY_H * 3600_000;
+  let t = Math.ceil(now / step) * step;
+  if (t - CUP_SIGNUP_CLOSE_MS <= now) t += step;
+  return t;
+}
+export const isExhibitionSlot = (startsAt: number) => EXHIBITION_HOURS.includes(new Date(startsAt).getUTCHours());
+const hhmm = (ts: number) => { const d = new Date(ts); return `${d.toISOString().slice(5, 10)} ${String(d.getUTCHours()).padStart(2, "0")}:00 UTC`; };
+export function newCup(now: number, number: number, startsAt = cupStart(now)): Tourney {
+  return {
+    id: `cup-${new Date(startsAt).toISOString().slice(0, 13)}`, name: `Fogline Cup #${number}`, kind: "cup",
+    signupOpens: now, startsAt, signupCloseMs: CUP_SIGNUP_CLOSE_MS, turnTimeout: CUP_TURN_S, roundCapMs: CUP_ROUND_CAP_MS, maxHumans: CUP_SIZE, fillBots: true,
+    status: "signup", entrants: [], rounds: [], prizes: CUP_PRIZES, createdAt: now, note: `starts ${hhmm(startsAt)}`,
+  };
+}
+/** The Sunday Major: the weekly 16-player bracket (Sunday 18:00 UTC). */
+export function newMajor(now: number, number: number): Tourney {
+  return { ...newWeekly(now, number), name: `Fogline Sunday Major #${number}`, kind: "major", signupCloseMs: CUP_SIGNUP_CLOSE_MS, turnTimeout: MAJOR_TURN_S, roundCapMs: MAJOR_ROUND_CAP_MS };
+}
+/** Turn an existing weekly (still in sign-up) into a Sunday Major. */
+export function asMajor(t: Tourney): Tourney {
+  if (t.kind !== "weekly" || t.status !== "signup") return t;
+  return { ...t, kind: "major", name: t.name.replace("Fogline Weekly", "Fogline Sunday Major (Weekly") + (t.name.startsWith("Fogline Weekly") ? ")" : ""), maxHumans: MAX_BRACKET, signupCloseMs: CUP_SIGNUP_CLOSE_MS, turnTimeout: MAJOR_TURN_S, roundCapMs: MAJOR_ROUND_CAP_MS };
+}
+export const signupClosesAt = (t: Tourney) => t.startsAt - (t.signupCloseMs ?? 0);
+
 export const BOT_LEVELS: BotLevel[] = ["hard", "normal", "easy"];
 const LEVEL_RANK: Record<BotLevel, number> = { hard: 3, normal: 2, easy: 1 };
 export const MAX_BRACKET = 16;
@@ -58,9 +105,10 @@ export function seedOrder(size: number): number[] {
 }
 
 /** Close signup: seed humans by rating (earlier signup breaks ties), add TapeLog bots to fill the bracket, pair round 1. */
-export function startBracket(t: Tourney, now: number): Tourney {
+export function startBracket(t: Tourney, now: number, opts: { personas?: Entrant[]; skipNote?: string } = {}): Tourney {
   const humans = t.entrants.filter((e) => !e.bot).sort((x, y) => y.rating - x.rating || x.joinedAt - y.joinedAt).slice(0, t.maxHumans);
-  if (humans.length === 0) return { ...t, status: "cancelled", note: "no sign-ups", endedAt: now };
+  if (humans.length === 0 && opts.personas?.length) return exhibitionBracket(t, now, opts.personas);
+  if (humans.length === 0) return t.kind === "practice" || t.kind === "weekly" ? { ...t, status: "cancelled", note: "no sign-ups", endedAt: now } : { ...t, status: "skipped", note: opts.skipNote ?? "no sign-ups", endedAt: now };
   const size = Math.min(MAX_BRACKET, nextPow2(Math.max(2, humans.length + (t.fillBots ? 1 : 0))));
   const bots: Entrant[] = [];
   if (t.fillBots) for (let i = 0; humans.length + bots.length < size; i++) {
@@ -75,6 +123,16 @@ export function startBracket(t: Tourney, now: number): Tourney {
   return settleAuto({ ...t, entrants: seeded, rounds: [round], status: "running", startsAt: Math.min(t.startsAt, now) }, now);
 }
 
+/** Nobody signed up: TapeLog bot personas play an 8-seat exhibition onchain (hard bots seeded first). */
+export function exhibitionBracket(t: Tourney, now: number, personas: Entrant[]): Tourney {
+  const size = Math.min(CUP_SIZE, 1 << Math.floor(Math.log2(Math.max(2, personas.length))));
+  const lv: Record<string, number> = { hard: 0, normal: 1, easy: 2 };
+  const seeded = personas.slice().sort((a, b) => lv[a.bot!] - lv[b.bot!] || a.joinedAt - b.joinedAt).slice(0, size).map((e) => ({ ...e, joinedAt: now }));
+  const order = seedOrder(size), round: Pairing[] = [];
+  for (let i = 0; i < size; i += 2) round.push({ a: order[i] - 1, b: order[i + 1] - 1, status: "waiting" });
+  return { ...t, name: `${t.name} · Exhibition`, exhibition: true, maxPlies: EXHIBITION_MAX_PLIES, prizes: [], entrants: seeded, rounds: [round], status: "running", startsAt: Math.min(t.startsAt, now), note: "Exhibition: nobody signed up, so TapeLog bots played it out. Not rated, no prizes." };
+}
+
 /** Seed number of an entrant (index + 1 after startBracket). */
 const seedOf = (i: number) => i + 1;
 /** Decide pairings that need no game: byes, and TapeLog bot vs TapeLog bot (the bots never play themselves: higher level advances). */
@@ -84,7 +142,7 @@ export function settleAuto(t: Tourney, now: number): Tourney {
     if (p.status === "done") continue;
     if (p.a === null || p.b === null) { const w = p.a ?? p.b; p.winner = w ?? undefined; p.status = "done"; p.note = w === null || w === undefined ? "empty" : "bye"; continue; }
     const A = t.entrants[p.a], B = t.entrants[p.b];
-    if (A.bot && B.bot) {
+    if (A.bot && B.bot && !(A.persona && B.persona)) {
       const w = LEVEL_RANK[A.bot] > LEVEL_RANK[B.bot] || (LEVEL_RANK[A.bot] === LEVEL_RANK[B.bot] && p.a < p.b) ? p.a : p.b;
       p.winner = w; p.status = "done"; p.note = "TapeLog bots don't play each other: the higher level advances";
     }

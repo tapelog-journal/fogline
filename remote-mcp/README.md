@@ -61,15 +61,17 @@ Offline self-play (`node test/levels-sim.mjs 200`): hard beats normal about 79%,
 
 ## Tournaments
 
-The `Tourney` Durable Object (`src/tourney.ts`, pure bracket logic in `src/tourney-core.ts`) runs a free weekly single-elimination tournament. One is always scheduled: every Sunday 18:00 UTC, and the next one opens as soon as the current one finishes.
+The `Tourney` Durable Object (`src/tourney.ts`, pure bracket logic in `src/tourney-core.ts`) runs free single-elimination tournaments on an automatic schedule (UTC-aligned, so they don't shift with daylight saving):
 
-- **Sign-up:** `tournament-signup` (session; optional `name`), MCP `fogline_tournament_signup`, or the bracket page `docs/tournament.html`. Up to 16 players. `tournament-withdraw` before the start.
-- **Draw:** at the start time players are seeded by ladder rating and TapeLog bots (Hard, Normal, Easy) fill the empty seats, so every bracket is a power of two and top seeds meet bots first. Bots never play each other: the higher level advances.
-- **Matches:** for each pairing the server creates a normal onchain match from the host player's own session (vs the house bot with `play-bot`, or reserved for the other player, who then joins automatically), with a 5-minute turn timer. Players find it with `tournament?session=` (`you.match`), on the Play page, or on the bracket page, and play as usual.
-- **Keeping it moving:** an alarm every 20 s follows each match onchain: it triggers a defender reveal or a winner's army check from the player's session, and the house wallet claims expired timers (anyone may). Results come from the chain only: the settled winner advances; a draw advances the better seed; a match still running after the 3-hour round cap is decided by pieces left on the board.
-- **Prizes (testnet only, never real money):** champion gets the Gilded Victory Banner cosmetic plus 250 test fUSD, runner-up the Tape Victory Banner plus 100 test fUSD. The house wallet buys the item with test fUSD and transfers it. No prize if a bot wins.
-- **API:** `GET /api/tournament[?id=]` (JSON or `format=md`). MCP `fogline_tournament`.
-- **Operator practice brackets:** `POST /admin/practice-tournament` needs the `ADMIN_TOKEN` secret in the `x-admin-token` header. The token is never put in a URL.
+- **Fogline Cup** every 4 hours at 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC (8 PM, 12 AM, 4 AM, 8 AM, 12 PM, 4 PM US Eastern in summer time). 8 players, 60-second turns (contract minimum), 15-minute round cap, so a cup is over in about an hour. Sign-ups close 5 minutes before the start. Prizes: Tape Victory Banner + 100 test fUSD, runner-up 50 test fUSD.
+- **Sunday Major** every Sunday 18:00 UTC: 16 players, 2-minute turns, 25-minute round cap. Prizes: Gilded Victory Banner + 250 test fUSD, runner-up Tape Victory Banner + 100 test fUSD.
+- **Sign-up:** `join-cup` (session; optional `name`) joins the next cup in one call; `tournament-signup&id=major` the Major; MCP `fogline_tournament_signup` (`event: next|major`); or the bracket page `docs/tournament.html`. `tournament-withdraw` before the start.
+- **Draw:** players are seeded by ladder rating and TapeLog house bots (Hard, Normal, Easy) fill the empty seats up to the next power of two; house bots never play each other (the higher level advances).
+- **Exhibitions:** a cup nobody signed up for is never just cancelled. In the 00:00 and 12:00 UTC slots (and for the Major) eight TapeLog bot personas (Rewind and Overdub on Hard; Splice, Reel and Static on Normal; Hiss, Wobble and Leader on Easy; each with its own throwaway testnet wallet and unlimited-supply cosmetics) play the bracket out onchain. Exhibition games stop at 100 plies or the round cap, and the side with fewer pieces resigns, so every game ends onchain. Exhibitions are labelled, never rated (the ladder skips persona matches), award no prizes, and the final gets a win clip and share card. Other empty cups are marked skipped.
+- **Gas budget:** a full 8-bot exhibition is 7 onchain games. Personas get small capped top-ups from the funder (`fundBot`: 0.00008 ETH below 0.00004, at most 24 per day), and exhibitions pause entirely when the funder is below 0.003 ETH, which keeps player grants and the house bot funded.
+- **Matches:** for each pairing the server creates a normal onchain match from the host player's own session (vs the house bot with `play-bot`, or reserved for the other player, who then joins automatically). An alarm every 20 s follows each match onchain: defender reveals, winner army checks, expired-timer claims (the house wallet pays testnet gas). Results come from the chain only.
+- **API:** `GET /api/tournament` returns `next`, `current`, `major`, `recent` (with `clip` / `card` for each final) and `tournament` (`?id=` for a specific one). MCP `fogline_tournament`.
+- **Operator:** `POST /admin/practice-tournament` needs the `ADMIN_TOKEN` secret in the `x-admin-token` header (never in a URL); `{"exhibitionCup":true}` schedules an extra cup now.
 
 ## Highlight clips
 

@@ -50,3 +50,37 @@ test("bots never play each other: higher level advances automatically", () => {
   assert.ok(auto.length >= 1);
 });
 test("adjudication by pieces left", () => { assert.equal(T.adjudicate([10, 8]), 0); assert.equal(T.adjudicate([7, 9]), 1); assert.equal(T.adjudicate([5, 5]), 2); });
+
+test("cups every 4 hours UTC; sign-ups close 5 minutes before", () => {
+  const at = (h, m = 0) => Date.UTC(2026, 9, 19, h, m);
+  assert.equal(new Date(T.cupStart(at(1, 0))).toISOString(), "2026-10-19T04:00:00.000Z");
+  assert.equal(new Date(T.cupStart(at(3, 54))).toISOString(), "2026-10-19T04:00:00.000Z");
+  assert.equal(new Date(T.cupStart(at(3, 56))).toISOString(), "2026-10-19T08:00:00.000Z");
+  assert.equal(new Date(T.cupStart(at(22, 0))).toISOString(), "2026-10-20T00:00:00.000Z");
+  const c = T.newCup(at(1), 3);
+  assert.equal(c.id, "cup-2026-10-19T04"); assert.equal(c.maxHumans, 8); assert.equal(c.turnTimeout, 60);
+  assert.equal(T.signupClosesAt(c), at(3, 55));
+  assert.ok(T.isExhibitionSlot(at(0)) && T.isExhibitionSlot(at(12)) && !T.isExhibitionSlot(at(4)));
+});
+test("an open weekly becomes a 16-player Sunday Major", () => {
+  const w = T.newWeekly(Date.UTC(2026, 9, 19), 2);
+  const m = T.asMajor(w);
+  assert.equal(m.kind, "major"); assert.equal(m.name, "Fogline Sunday Major (Weekly #2)"); assert.equal(m.maxHumans, 16); assert.equal(m.startsAt, w.startsAt);
+});
+test("empty cup: skipped without personas, exhibition with them (bots play each other, no prizes)", () => {
+  const c = T.newCup(Date.UTC(2026, 9, 19, 1), 1);
+  assert.equal(T.startBracket(c, c.startsAt, { skipNote: "x" }).status, "skipped");
+  const lv = ["hard", "hard", "normal", "normal", "normal", "easy", "easy", "easy"];
+  const ps = lv.map((l, i) => ({ address: "0xb" + String(i).padStart(39, "0"), name: "P" + i, client: "house", rating: 0, bot: l, persona: "p" + i, joinedAt: i }));
+  let t = T.startBracket(c, c.startsAt, { personas: ps });
+  assert.equal(t.status, "running"); assert.ok(t.exhibition); assert.equal(t.prizes.length, 0); assert.equal(t.maxPlies, T.EXHIBITION_MAX_PLIES);
+  assert.equal(t.rounds[0].length, 4); assert.ok(t.rounds[0].every((p) => p.status === "waiting")); // nothing auto-advanced
+  assert.equal(t.entrants[0].bot, "hard"); assert.equal(t.entrants[7].bot, "easy");
+  for (let r = 0; r < 3; r++) t.rounds[r].forEach((_, i) => { t = T.recordResult(t, r, i, 0, c.startsAt + 1); });
+  assert.equal(t.status, "done"); assert.equal(t.champion, 0);
+});
+test("cup with one player: house bots fill and never play each other", () => {
+  const c = { ...T.newCup(Date.UTC(2026, 9, 19, 1), 1), entrants: [human(1)] };
+  const t = T.startBracket(c, c.startsAt);
+  assert.equal(t.entrants.length, 2); assert.ok(!t.exhibition); assert.equal(t.rounds[0][0].status, "waiting");
+});

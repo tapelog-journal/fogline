@@ -258,10 +258,11 @@ function sessionUI(info) {
 }
 async function tourneyCheck() {
   try {
-    const t = (await call("tournament")).tournament, y = t.you;
+    const j = await call("tournament");
+    const t = (j.current ?? []).find((c) => c.you?.match?.matchId) ?? j.next ?? j.tournament, y = t.you;
     let h = "";
     if (y?.match?.matchId) h = `Your ${t.name} match: <a href="#" id="tMatch">#${y.match.matchId}</a> (${y.match.a} vs ${y.match.b})`;
-    else if (t.status === "signup") h = y?.signedUp ? `You're signed up for <a href="./tournament.html">${t.name}</a>.` : `<a href="./tournament.html">${t.name}</a>: sign-ups open, free to enter.`;
+    else if (t.status === "signup") h = y?.signedUp ? `You're signed up for <a href="./tournament.html">${t.name}</a>.` : `Next <a href="./tournament.html">${t.name}</a> starts ${new Date(t.startsAtMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: free to enter.`;
     $("tourneyInfo").innerHTML = h; $("tourneyRow").classList.toggle("hidden", !h);
     $("tMatch")?.addEventListener("click", (e) => { e.preventDefault(); load(String(y.match.matchId)); });
   } catch {}

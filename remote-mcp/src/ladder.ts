@@ -25,6 +25,8 @@ export class Ladder extends DurableObject<Env> {
     const a = addr.toLowerCase();
     const e = await this.ctx.storage.get<Entry>(`p:${a}`);
     if (e) return e;
+    const xb = await this.ctx.storage.get<string>(`xb:${a}`);
+    if (xb) return { address: a, client: "house", name: xb, rating: START_RATING, games: 0, w: 0, l: 0, d: 0 };
     const lv = /^house:(easy|normal|hard)$/.exec(a)?.[1];
     if (lv) return { address: a, client: "house", name: `TapeLog bot (${lv[0].toUpperCase() + lv.slice(1)})`, rating: START_RATING, games: 0, w: 0, l: 0, d: 0 };
     return { address: a, client: "unknown", rating: START_RATING, games: 0, w: 0, l: 0, d: 0 };
@@ -34,6 +36,8 @@ export class Ladder extends DurableObject<Env> {
     if (addr.toLowerCase() !== this.houseAddr()) return addr;
     return `house:${(await this.ctx.storage.get<string>(`hl:${id}`)) ?? "normal"}`;
   }
+  /** Exhibition bot personas: their matches are never rated (they only play each other in exhibitions). */
+  async noteExhibitionBots(bots: { address: string; name: string }[]) { await this.migrate(); for (const b of bots) await this.ctx.storage.put(`xb:${b.address.toLowerCase()}`, b.name); }
   async noteHouseLevel(id: string, level: string) { await this.migrate(); await this.ctx.storage.put(`hl:${id}`, level); }
 
   /** A player set a handle and/or reported its client kind. */
@@ -56,6 +60,7 @@ export class Ladder extends DurableObject<Env> {
     const m: any = await pub(c.rpcUrl).readContract({ address: c.game, abi: foglineAbi, functionName: "getMatch", args: [BigInt(id)] });
     const phase = Number(m.phase), reason = Number(m.reason), winner = Number(m.winner);
     if (phase === NONE) return { rated: false, reason: "no such match" };
+    for (const p of m.players as string[]) if (await this.ctx.storage.get(`xb:${p.toLowerCase()}`)) { await this.ctx.storage.put(`m:${id}`, { skipped: "exhibition" }); await this.untrack(id); return { rated: false, reason: "exhibition (not rated)" }; }
     if (phase !== SETTLED) { await this.track(id, 15_000); return { rated: false, reason: "not settled yet" }; }
     if (!COUNTED.has(reason)) { await this.ctx.storage.put(`m:${id}`, { skipped: reason }); await this.untrack(id); return { rated: false, reason: "not a played game" }; }
     const [a, b] = [await this.entry(await this.seat(m.players[0], id)), await this.entry(await this.seat(m.players[1], id))];
@@ -106,6 +111,7 @@ export class Ladder extends DurableObject<Env> {
     const keep = new Map<string, unknown>();
     for (const [k, e] of await this.ctx.storage.list<Entry>({ prefix: "p:" })) if (e.client !== "house" && (e.name || e.client !== "unknown")) keep.set(k, { address: e.address, name: e.name, client: e.client, rating: START_RATING, games: 0, w: 0, l: 0, d: 0 });
     for (const [k, l] of await this.ctx.storage.list({ prefix: "hl:" })) keep.set(k, l);
+    for (const [k, l] of await this.ctx.storage.list({ prefix: "xb:" })) keep.set(k, l);
     await this.ctx.storage.deleteAll();
     for (const [k, val] of keep) await this.ctx.storage.put(k, val);
     await this.ctx.storage.put("schema", SCHEMA);

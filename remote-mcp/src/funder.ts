@@ -67,8 +67,21 @@ export class Funder extends DurableObject<Env> {
     return { ok: true, hash, amountEth: formatEther(FUNDING.houseTopUpWei) };
   }
 
+  /** Small, capped gas for exhibition bot personas (internal only; stops well above the player-grant floor). */
+  async fundBot(address: Address): Promise<GrantResult> { return this.gate.run(() => this._fundBot(address)); }
+  private async _fundBot(address: Address): Promise<GrantResult> {
+    const bal = await pub(cfg(this.env).rpcUrl).getBalance({ address });
+    if (bal >= FUNDING.botMinWei) return { ok: false, reason: "bot has enough" };
+    const day = utcDay();
+    if ((await this.counter(`bots:${day}`)) >= FUNDING.maxBotTopUpsPerDay) return { ok: false, reason: "daily exhibition gas budget used" };
+    if ((await this.funderBalance()) < FUNDING.exhibitionFloorWei) return { ok: false, reason: "funder below the exhibition floor" };
+    await this.bump(`bots:${day}`);
+    const hash = await this.send(address, FUNDING.botTopUpWei, "fundBot");
+    return { ok: true, hash, amountEth: formatEther(FUNDING.botTopUpWei) };
+  }
+
   async stats() {
     const day = utcDay();
-    return { day, grantsToday: await this.counter(`grants:${day}`), topUpsToday: await this.counter(`topups:${day}`), funderBalanceEth: formatEther(await this.funderBalance()) };
+    return { day, grantsToday: await this.counter(`grants:${day}`), topUpsToday: await this.counter(`topups:${day}`), botTopUpsToday: await this.counter(`bots:${day}`), funderBalanceEth: formatEther(await this.funderBalance()) };
   }
 }
