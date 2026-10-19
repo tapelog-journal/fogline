@@ -60,7 +60,7 @@ test("cups every 4 hours UTC; sign-ups close 5 minutes before", () => {
   const c = T.newCup(at(1), 3);
   assert.equal(c.id, "cup-2026-10-19T04"); assert.equal(c.maxHumans, 8); assert.equal(c.turnTimeout, 60);
   assert.equal(T.signupClosesAt(c), at(3, 55));
-  assert.ok(T.isExhibitionSlot(at(0)) && T.isExhibitionSlot(at(12)) && !T.isExhibitionSlot(at(4)));
+  assert.ok([0, 4, 8, 12, 16, 20].every((h) => T.isExhibitionSlot(at(h))) && !T.isExhibitionSlot(at(5)));
 });
 test("an open weekly becomes a 16-player Sunday Major", () => {
   const w = T.newWeekly(Date.UTC(2026, 9, 19), 2);

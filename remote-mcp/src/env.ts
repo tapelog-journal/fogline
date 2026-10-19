@@ -55,7 +55,7 @@ export const FUNDING = {
   // exhibition bot personas (bot-vs-bot cups): small top-ups, a daily cap, and a floor that protects player grants + the house
   botMinWei: 40_000_000_000_000n, // top up a persona below 0.00004 ETH
   botTopUpWei: 80_000_000_000_000n, // with 0.00008 ETH (~3 exhibition games)
-  maxBotTopUpsPerDay: 24,
+  maxBotTopUpsPerDay: 40, // 6 exhibitions a day need about 22-30
   exhibitionFloorWei: 3_000_000_000_000_000n, // no exhibition gas when the funder is below 0.003 ETH
 };
 

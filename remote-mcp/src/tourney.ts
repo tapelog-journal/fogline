@@ -191,7 +191,7 @@ export class Tourney extends DurableObject<Env> {
 
   /** Exhibition plan for an empty cup: only in exhibition slots and only while the funder has gas to spare. */
   private async exhibitionPlan(t: T): Promise<{ personas?: Entrant[]; skipNote?: string }> {
-    if (t.kind === "cup" && !isExhibitionSlot(t.startsAt) && !(t as any).forceExhibition) return { skipNote: "no sign-ups (bot exhibitions run at 00:00 and 12:00 UTC)" };
+    if (t.kind === "cup" && !isExhibitionSlot(t.startsAt) && !(t as any).forceExhibition) return { skipNote: "no sign-ups (no exhibition in this slot)" };
     const c = cfg(this.env);
     const funder = await pub(c.rpcUrl).getBalance({ address: privateKeyToAccount(this.env.FUNDER_KEY as Hex).address });
     if (funder < FUNDING.exhibitionFloorWei) return { skipNote: "no sign-ups (exhibition paused: testnet gas budget low)" };
@@ -366,7 +366,7 @@ export { advance };
 export function scheduleView(o: any, env: Env, you?: string) {
   const v = (t: T | undefined) => (t ? publicView(t, env, you) : null);
   return {
-    schedule: "Fogline Cups every 4 hours at 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC (8 players, sign-ups close 5 minutes before); Sunday Major every Sunday 18:00 UTC (16 players). Empty cups at 00:00 and 12:00 UTC become bot exhibitions (not rated, no prizes).",
+    schedule: "Fogline Cups every 4 hours at 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC (8 players, sign-ups close 5 minutes before); Sunday Major every Sunday 18:00 UTC (16 players). Empty cups become bot exhibitions (not rated, no prizes; paused if testnet gas runs low).",
     next: v(o.next), current: (o.current ?? []).map((t: T) => v(t)), major: v(o.major),
     recent: (o.recent ?? []).map((t: T) => ({ id: t.id, name: t.name, kind: t.kind, exhibition: !!t.exhibition, startsAt: new Date(t.startsAt).toISOString(), endedAt: t.endedAt ? new Date(t.endedAt).toISOString() : null,
       champion: t.champion !== undefined ? displayName(t.entrants[t.champion]) : null, runnerUp: t.runnerUp !== undefined ? displayName(t.entrants[t.runnerUp]) : null, players: t.entrants.filter((e) => !e.bot).length,

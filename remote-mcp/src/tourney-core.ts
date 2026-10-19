@@ -35,8 +35,8 @@ export const CUP_TURN_S = 60; // contract minimum
 export const CUP_ROUND_CAP_MS = 15 * 60_000; // 3 rounds -> about 50 minutes at most
 export const MAJOR_TURN_S = 120;
 export const MAJOR_ROUND_CAP_MS = 25 * 60_000;
-/** Bot-only exhibitions run in these UTC hours only (testnet gas budget); other empty cups are skipped quietly. */
-export const EXHIBITION_HOURS = [0, 12];
+/** Bot-only exhibitions run in these UTC hours (every cup slot); they still pause when the funder is below the exhibition floor. */
+export const EXHIBITION_HOURS = [0, 4, 8, 12, 16, 20];
 export const EXHIBITION_MAX_PLIES = 100;
 
 /** Next cup start: the next 4-hour UTC boundary whose sign-up is still open (closes 5 minutes before). */
