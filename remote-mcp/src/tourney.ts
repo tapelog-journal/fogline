@@ -89,7 +89,8 @@ export class Tourney extends DurableObject<Env> {
     const current = all.filter((x) => x.status === "running");
     const major = all.find((x) => (x.kind === "major" || x.kind === "weekly") && (x.status === "signup" || x.status === "running"));
     const recent = all.filter((x) => x.status === "done" && x.kind !== "practice").slice(0, 12);
-    const t = id ? await this.load(id) : current[0] ?? next;
+    const fresh = recent.find((x) => x.endedAt && Date.now() - x.endedAt < 3 * 3600_000);
+    const t = id ? await this.load(id) : current[0] ?? fresh ?? next;
     const brief = (x: T) => ({ id: x.id, name: x.name, kind: x.kind, exhibition: !!x.exhibition, status: x.status, startsAt: x.startsAt, entrants: x.entrants.filter((e) => !e.bot).length, champion: x.champion !== undefined ? displayName(x.entrants[x.champion]) : undefined, finalMatchId: x.finalMatchId ?? null });
     return {
       tournament: t, next, current, major, recent,

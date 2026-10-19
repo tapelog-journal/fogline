@@ -143,10 +143,10 @@ function render() {
   $("major").innerHTML = mj ? `🏟️ <b>${esc(mj.name)}</b> · ${local(mj.startsAtMs)} · <span id="majorCount"></span> · ${mj.signedUp}/${mj.maxPlayers} signed up${sess() && mj.status === "signup" ? (mj.you?.signedUp ? " · ✅ you're in" : ` · <a href="#" id="joinMajor">join the Major</a>`) : ""}` : "";
   $("joinMajor")?.addEventListener("click", (e) => { e.preventDefault(); act("Signing you up for the Major…", async () => { const r = await call("tournament-signup", { id: "major", client: "browser" }); $("msg").textContent = r.text; await load(); }); });
   // bracket: the requested / live tournament, else the last finished cup, else the next cup
-  const shown = q.get("id") ? t : (data.current?.[0] ?? null);
+  const shown = q.get("id") ? t : (data.current?.[0] ?? (t.status === "done" ? t : null));
   const focus = shown ?? (data.recent?.[0] ? null : n);
   if (focus) {
-    $("bTitle").innerHTML = `${focus.status === "running" ? "🔴 Live: " : ""}${esc(focus.name)} ${focus.exhibition ? '<span class="pill exh">Exhibition · not rated · no prizes</span>' : ""} <span class="pill ${focus.status}">${esc(focus.status === "signup" ? "sign-ups open" : focus.status)}</span>`;
+    $("bTitle").innerHTML = `${focus.status === "running" ? "🔴 Live: " : focus.status === "done" ? "Latest result: " : ""}${esc(focus.name)} ${focus.exhibition ? '<span class="pill exh">Exhibition · not rated · no prizes</span>' : ""} <span class="pill ${focus.status}">${esc(focus.status === "signup" ? "sign-ups open" : focus.status)}</span>`;
     $("bmeta").textContent = focus.note ?? "";
     const b = bracketHtml(focus);
     if (b) { $("bracket").className = "bracket"; $("bracket").innerHTML = b; } else { $("bracket").className = "tag"; $("bracket").textContent = "The bracket is drawn when sign-ups close. Players are seeded by ladder rating; TapeLog bots fill the empty seats so everyone gets a game."; }
