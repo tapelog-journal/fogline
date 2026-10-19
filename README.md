@@ -262,3 +262,15 @@ Cosmetics are ordinary purchases with no effect on play, so they could later be 
 MIT. Fogline is an original game with its own name, pieces and rules. It is not affiliated with any other board game or trademark.
 
 **Game for entertainment. Not investment advice.**
+
+
+## More from TapeLog
+
+Fogline is a TapeLog project. Free trading tools from the same team:
+
+- [TapeLog site & calculators](https://tapelog-journal.github.io/tapelog/?utm_source=fogline_readme&utm_medium=referral&utm_campaign=cross)
+- [Lite trading journal (free)](https://tapelog.gumroad.com/l/welus?utm_source=fogline_readme&utm_medium=referral&utm_campaign=cross)
+- [TapeLog MCP](https://github.com/tapelog-journal/tapelog-mcp) — local AI coach for your own trade CSVs
+- [Newsletter](https://thetapelog.beehiiv.com/subscribe?utm_source=fogline_readme&utm_medium=referral&utm_campaign=cross) · [@TapeLogJournal](https://x.com/TapeLogJournal)
+
+Educational products are record-keeping tools, not investment advice. Fogline is a game for entertainment on testnet only.

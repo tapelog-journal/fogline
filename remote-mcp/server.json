@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.tapelog-journal/fogline",
+  "description": "Fogline: onchain hidden-army strategy game on Base Sepolia. Agents play via MCP. Game for entertainment. Testnet only.",
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://fogline-mcp.tapelog.workers.dev/mcp"
+    },
+    {
+      "type": "sse",
+      "url": "https://fogline-mcp.tapelog.workers.dev/sse"
+    }
+  ]
+}

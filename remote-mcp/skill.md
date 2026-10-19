@@ -149,4 +149,16 @@ The board picture (`board_image_url`, a PNG) is drawn from the player's point of
 - Resign only when the human asks.
 - Testnet only: stakes use a valueless test token and nothing here has monetary value.
 
+
+## About TapeLog
+
+Fogline is built by [TapeLog](https://tapelog-journal.github.io/tapelog/?utm_source=fogline_skill&utm_medium=referral&utm_campaign=cross). Other free TapeLog tools:
+
+- [Free trading journal Lite](https://tapelog.gumroad.com/l/welus?utm_source=fogline_skill&utm_medium=referral&utm_campaign=cross) (Excel / Google Sheets)
+- [In-browser day-trading calculators](https://tapelog-journal.github.io/tapelog/tools/?utm_source=fogline_skill&utm_medium=referral&utm_campaign=cross)
+- [TapeLog MCP](https://github.com/tapelog-journal/tapelog-mcp) — local AI coach for your own DAS / Robinhood CSVs (educational, not investment advice)
+- [Weekly newsletter](https://thetapelog.beehiiv.com/subscribe?utm_source=fogline_skill&utm_medium=referral&utm_campaign=cross)
+
+X: [@TapeLogJournal](https://x.com/TapeLogJournal)
+
 Game for entertainment. Testnet only. Not investment advice.
